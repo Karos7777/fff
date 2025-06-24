@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админ Панель - Магазин Услуг</title>
+    <link rel="stylesheet" href="admin-styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>🔧 Админ Панель</h1>
+            <div class="lang-switcher">
+                <select id="langSelect">
+                    <option value="ru">Русский</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+            <div class="admin-nav">
+                <button class="nav-btn active" data-tab="dashboard">Дашборд</button>
+                <button class="nav-btn" data-tab="products">Товары</button>
+                <button class="nav-btn" data-tab="orders">Заказы</button>
+                <button class="nav-btn" data-tab="users">Пользователи</button>
+            </div>
+            <div class="admin-user">
+                <span id="adminName"></span>
+                <button id="adminLogoutBtn" class="btn-secondary">Выйти</button>
+            </div>
+        </header>
+
+        <!-- Дашборд -->
+        <div class="tab-content active" id="dashboard">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Всего товаров</h3>
+                    <div class="stat-number" id="totalProducts">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Всего заказов</h3>
+                    <div class="stat-number" id="totalOrders">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Пользователей</h3>
+                    <div class="stat-number" id="totalUsers">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Доход</h3>
+                    <div class="stat-number" id="totalRevenue">0 $</div>
+                </div>
+            </div>
+            
+            <div class="recent-orders">
+                <h2>Последние заказы</h2>
+                <div class="orders-table" id="recentOrdersTable">
+                    <!-- Последние заказы будут загружены динамически -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Управление товарами -->
+        <div class="tab-content" id="products">
+            <div class="section-header">
+                <h2>Управление товарами</h2>
+                <button id="addProductBtn" class="btn-primary">Добавить товар</button>
+            </div>
+
+            <div class="products-table-container">
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Изображение</th>
+                            <th>Название</th>
+                            <th>Категория</th>
+                            <th>Цена</th>
+                            <th>Остаток</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsTableBody">
+                        <!-- Товары будут загружены динамически -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Управление заказами -->
+        <div class="tab-content" id="orders">
+            <div class="section-header">
+                <h2>Управление заказами</h2>
+                <div class="order-filters">
+                    <select id="orderStatusFilter" class="filter-select">
+                        <option value="">Все статусы</option>
+                        <option value="pending">Ожидает</option>
+                        <option value="processing">В обработке</option>
+                        <option value="completed">Завершен</option>
+                        <option value="cancelled">Отменен</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="orders-table-container">
+                <table class="orders-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Пользователь</th>
+                            <th>Товар</th>
+                            <th>Цена</th>
+                            <th>Статус</th>
+                            <th>Дата</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersTableBody">
+                        <!-- Заказы будут загружены динамически -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Управление пользователями -->
+        <div class="tab-content" id="users">
+            <div class="section-header">
+                <h2>Пользователи</h2>
+            </div>
+
+            <div class="users-table-container">
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Telegram ID</th>
+                            <th>Username</th>
+                            <th>Роль</th>
+                            <th>Дата регистрации</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <!-- Пользователи будут загружены динамически -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Модальное окно для добавления/редактирования товара -->
+        <div class="modal" id="productModal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2 id="modalTitle">Добавить товар</h2>
+                
+                <form id="productForm" class="product-form">
+                    <div class="form-group">
+                        <label for="productName">Название товара *</label>
+                        <input type="text" id="productName" name="name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productDescription">Описание</label>
+                        <textarea id="productDescription" name="description" rows="4"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="productPrice">Цена *</label>
+                            <input type="number" id="productPrice" name="price" step="0.01" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="productCategory">Категория</label>
+                            <select id="productCategory" name="category">
+                                <option value="development">Разработка</option>
+                                <option value="consultation">Консультации</option>
+                                <option value="design">Дизайн</option>
+                                <option value="other">Другое</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="productStock">Остаток</label>
+                            <input type="number" id="productStock" name="stock" min="0" value="0">
+                        </div>
+
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" id="productInfinite" name="infinite_stock">
+                                Бесконечный остаток
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="productImage">Изображение</label>
+                        <input type="file" id="productImage" name="image" accept="image/*">
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="productActive" name="is_active" checked>
+                            Активный товар
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" id="cancelBtn">Отмена</button>
+                        <button type="submit" class="btn-primary">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Модальное окно для изменения статуса заказа -->
+        <div class="modal" id="orderStatusModal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Изменить статус заказа</h2>
+                
+                <form id="orderStatusForm" class="order-status-form">
+                    <div class="form-group">
+                        <label for="orderStatus">Новый статус</label>
+                        <select id="orderStatus" name="status" required>
+                            <option value="pending">Ожидает</option>
+                            <option value="processing">В обработке</option>
+                            <option value="completed">Завершен</option>
+                            <option value="cancelled">Отменен</option>
+                        </select>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" id="cancelStatusBtn">Отмена</button>
+                        <button type="submit" class="btn-primary">Обновить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html> 

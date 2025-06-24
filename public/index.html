@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Магазин Услуг</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 data-lang="shopTitle"></h1>
+            <p data-lang="shopSubtitle"></p>
+            <div class="lang-switcher">
+                <select id="langSelect">
+                    <option value="ru" data-lang="langRu">Русский</option>
+                    <option value="en" data-lang="langEn">English</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="user-info" id="userInfo">
+            <span id="userName"></span>
+            <button id="logoutBtn" class="btn-secondary" data-lang="logout"></button>
+        </div>
+        
+        <div class="breadcrumbs">
+            <a href="#" class="breadcrumb-item" data-lang="home"></a>
+            <span class="breadcrumb-separator">/</span>
+            <span class="breadcrumb-active" data-lang="catalog"></span>
+        </div>
+        
+        <div id="adminAddServiceContainer">
+            <button id="adminAddServiceBtn" class="btn btn-accent" data-lang="addService"></button>
+        </div>
+
+        <div class="auth-section" id="authSection">
+            <div class="auth-card">
+                <h2 data-lang="authTitle"></h2>
+                <p data-lang="authDescription"></p>
+                <button id="authBtn" class="btn-primary" data-lang="authButton"></button>
+            </div>
+        </div>
+
+        <main class="main-content" id="mainContent" style="display: none;">
+            <!-- Хлебные крошки -->
+            <div class="breadcrumbs" id="breadcrumbs">
+                <a href="#" class="breadcrumb-item" data-lang="home"></a>
+                <span class="breadcrumb-separator">/</span>
+                <span class="breadcrumb-active" data-lang="catalog"></span>
+            </div>
+
+            <!-- Кнопка для админа -->
+            <div id="adminAddServiceContainer" style="display:none; margin-bottom:20px;">
+                <button id="adminAddServiceBtn" class="btn btn-accent" data-lang="addService"></button>
+            </div>
+
+            <!-- Поиск и фильтры -->
+            <div class="search-section">
+                <div class="search-container">
+                    <input type="text" id="searchInput" class="search-input" data-lang="searchPlaceholder" placeholder="">
+                    <div class="search-suggestions" id="searchSuggestions"></div>
+                </div>
+
+                <div class="filters">
+                    <div class="filter-group">
+                        <label class="filter-label" data-lang="filterCategory"></label>
+                        <select id="categoryFilter" class="filter-select">
+                            <option value=""></option> <option value="development" data-lang="categoryDevelopment"></option>
+                            <option value="consultation" data-lang="categoryConsultation"></option>
+                            <option value="design" data-lang="categoryDesign"></option>
+                            <option value="other" data-lang="categoryOther"></option>
+                        </select>
+                    </div>
+                
+                    <div class="filter-group">
+                        <label class="filter-label" data-lang="filterPrice"></label>
+                        <select id="priceFilter" class="filter-select">
+                            <option value=""></option> <option value="0-1000" data-lang="priceTo1000"></option>
+                            <option value="1000-5000" data-lang="price1000_5000"></option>
+                            <option value="5000-10000" data-lang="price5000_10000"></option>
+                            <option value="10000+" data-lang="priceMore10000"></option>
+                        </select>
+                    </div>
+                
+                    <div class="filter-group">
+                        <label class="filter-label" data-lang="filterSort"></label>
+                        <select id="sortFilter" class="filter-select">
+                            <option value="newest" data-lang="sortNewest"></option>
+                            <option value="popular" data-lang="sortPopular"></option>
+                            <option value="price-low" data-lang="sortPriceLow"></option>
+                            <option value="price-high" data-lang="sortPriceHigh"></option>
+                            <option value="rating" data-lang="sortRating"></option>
+                        </select>
+                    </div>
+                
+                    <div class="filter-group">
+                        <label class="filter-label" data-lang="filterStock"></label>
+                        <select id="stockFilter" class="filter-select">
+                            <option value="" data-lang="stockAll"></option>
+                            <option value="in-stock" data-lang="stockIn"></option>
+                            <option value="low-stock" data-lang="stockLow"></option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Популярные категории -->
+            <div class="popular-categories">
+                <h2 data-lang="popularCategories"></h2>
+                <div class="categories-grid">
+                    <a href="#" class="category-card" data-category="development">
+                        <span class="category-icon">💻</span>
+                        <div class="category-name" data-lang="categoryDevelopment"></div>
+                    </a>
+                    <a href="#" class="category-card" data-category="consultation">
+                        <span class="category-icon">📋</span>
+                        <div class="category-name" data-lang="categoryConsultation"></div>
+                    </a>
+                    <a href="#" class="category-card" data-category="design">
+                        <span class="category-icon">🎨</span>
+                        <div class="category-name" data-lang="categoryDesign"></div>
+                    </a>
+                    <a href="#" class="category-card" data-category="other">
+                        <span class="category-icon">🔧</span>
+                        <div class="category-name" data-lang="categoryOther"></div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Товары -->
+            <div class="products-grid" id="productsGrid">
+                <!-- Товары будут загружены динамически -->
+            </div>
+
+            <!-- Рекомендации -->
+            <div class="recommendations" id="recommendations" style="display: none;">
+                <h2 data-lang="recommendations"></h2>
+                <div class="products-grid" id="recommendationsGrid">
+                    <!-- Рекомендации будут загружены динамически -->
+                </div>
+            </div>
+
+            <!-- Недавно просмотренные -->
+            <div class="recently-viewed" id="recentlyViewed" style="display: none;">
+                <h2 data-lang="recentlyViewed"></h2>
+                <div class="products-grid" id="recentlyViewedGrid">
+                    <!-- Недавно просмотренные будут загружены динамически -->
+                </div>
+            </div>
+
+            <!-- Заказы -->
+            <div class="orders-section" id="ordersSection" style="display: none;">
+                <h2 data-lang="myOrders"></h2>
+                <div class="orders-list" id="ordersList">
+                    <!-- Заказы будут загружены динамически -->
+                </div>
+            </div>
+        </main>
+
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+    </div>
+
+    <!-- Модальное окно для деталей товара -->
+    <div class="modal" id="productModal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div class="product-details" id="productDetails">
+                <!-- Детали товара будут загружены динамически -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для отзывов -->
+    <div class="modal" id="reviewsModal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 data-lang="reviewsModalTitle"></h2>
+            <div class="reviews-container" id="reviewsContainer">
+                <!-- Отзывы будут загружены динамически -->
+            </div>
+            <div class="review-form" id="reviewForm" style="display: none;">
+                <h3 data-lang="leaveReviewTitle"></h3>
+                <form id="addReviewForm">
+                    <div class="rating-input">
+                        <label data-lang="yourRating"></label>
+                        <div class="stars-input">
+                            <span class="star" data-rating="1">★</span>
+                            <span class="star" data-rating="2">★</span>
+                            <span class="star" data-rating="3">★</span>
+                            <span class="star" data-rating="4">★</span>
+                            <span class="star" data-rating="5">★</span>
+                        </div>
+                    </div>
+                    <textarea data-lang="yourReviewPlaceholder" placeholder="Ваш отзыв..." required></textarea>
+                    <button type="submit" class="btn-primary" data-lang="sendReview">Отправить отзыв</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для оформления заказа -->
+    <div class="modal" id="orderModal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 data-lang="orderModalTitle"></h2>
+            <div class="order-form" id="orderForm">
+                <div class="order-summary">
+                    <h3 data-lang="orderSummaryTitle"></h3>
+                    <div id="orderSummary"></div>
+                </div>
+                <div class="payment-methods">
+                    <h3 data-lang="paymentMethodTitle"></h3>
+                    <div class="payment-options">
+                        <label class="payment-option">
+                            <input type="radio" name="payment" value="usdt-arbitrum" checked>
+                            <span>USDT (Arbitrum)</span>
+                        </label>
+                        <label class="payment-option">
+                            <input type="radio" name="payment" value="usdt-optimism">
+                            <span>USDT (Optimism)</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="order-actions">
+                    <button class="btn-secondary" id="cancelOrder" data-lang="cancel">Отмена</button>
+                    <button class="btn-primary" id="confirmOrder" data-lang="confirmPayment">Оплатить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Чат поддержки -->
+    <div class="support-chat" id="supportChat">
+        <button class="support-toggle" id="supportToggle" data-lang="support">
+            💬 Поддержка
+        </button>
+        <div class="support-panel" id="supportPanel" style="display: none;">
+            <div class="support-header">
+                <h3 data-lang="supportTitle"></h3>
+                <button class="support-close" id="supportClose">&times;</button>
+            </div>
+            <div class="support-content">
+                <div class="faq-section">
+                    <h4 data-lang="faq"></h4>
+                    <div class="faq-item">
+                        <div class="faq-question" data-lang="faq1_q"></div>
+                        <div class="faq-answer" data-lang="faq1_a"></div>
+                    </div>
+                    <div class="faq-item">
+                        <div class="faq-question" data-lang="faq2_q"></div>
+                        <div class="faq-answer" data-lang="faq2_a"></div>
+                    </div>
+                </div>
+                <div class="contact-section">
+                    <h4 data-lang="contactUs"></h4>
+                    <a href="https://t.me/support" class="btn-primary" target="_blank" data-lang="contactTelegram">Написать в Telegram</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для добавления услуги -->
+    <div class="modal" id="addServiceModal">
+        <div class="modal-content">
+            <span class="close" id="closeAddServiceModal">&times;</span>
+            <h2>Добавить услугу</h2>
+            <form id="addServiceForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label>Название *</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea name="description" rows="3"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Цена *</label>
+                        <input type="number" name="price" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Категория</label>
+                        <select name="category">
+                            <option value="development">Разработка</option>
+                            <option value="consultation">Консультации</option>
+                            <option value="design">Дизайн</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Остаток</label>
+                        <input type="number" name="stock" min="0" value="0">
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" name="infinite_stock">
+                            Бесконечный остаток
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Изображение</label>
+                    <input type="file" name="image" accept="image/*">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelAddServiceBtn">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="reviews.js"></script>
+</body>
+</html> 
