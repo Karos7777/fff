@@ -8,6 +8,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { adminMiddleware, generateToken } = require('./middleware');
+const PaymentService = require('./payment-service');
+const cron = require('node-cron');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -113,6 +115,16 @@ try {
   console.log('✅ База данных инициализирована успешно');
 } catch (error) {
   console.error('❌ Ошибка инициализации базы данных:', error);
+  process.exit(1);
+}
+
+// Инициализация сервиса платежей
+let paymentService;
+try {
+  paymentService = new PaymentService(db, BOT_TOKEN);
+  console.log('✅ Сервис платежей инициализирован');
+} catch (error) {
+  console.error('❌ Ошибка инициализации сервиса платежей:', error);
   process.exit(1);
 }
 
@@ -582,6 +594,235 @@ app.post('/api/notify-order', adminMiddleware, async (req, res) => {
   }
 });
 
+// ===== PAYMENT API ENDPOINTS =====
+
+// Создание инвойса для Stars
+app.post('/api/payments/stars/create-invoice', adminMiddleware, async (req, res) => {
+  try {
+    const { orderId, productId, amount, description } = req.body;
+    const userId = req.user.id;
+
+    if (!orderId || !productId || !amount || !description) {
+      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+    }
+
+    // Проверяем существование заказа
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
+    const order = getOrder.get(orderId, userId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+
+    const invoice = await paymentService.createStarsInvoice(orderId, userId, productId, amount, description);
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.invoiceId,
+        payload: invoice.payload,
+        telegramInvoice: invoice.telegramInvoice,
+        expiresAt: invoice.expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания Stars инвойса:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Создание инвойса для криптовалют
+app.post('/api/payments/crypto/create-invoice', adminMiddleware, async (req, res) => {
+  try {
+    const { orderId, productId, amount, currency } = req.body;
+    const userId = req.user.id;
+
+    if (!orderId || !productId || !amount || !currency) {
+      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+    }
+
+    if (!['TON', 'USDT'].includes(currency)) {
+      return res.status(400).json({ error: 'Неподдерживаемая валюта' });
+    }
+
+    // Проверяем существование заказа
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
+    const order = getOrder.get(orderId, userId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+
+    const invoice = await paymentService.createCryptoInvoice(orderId, userId, productId, amount, currency);
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.invoiceId,
+        payload: invoice.payload,
+        address: invoice.address,
+        memo: invoice.memo,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        expiresAt: invoice.expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания крипто инвойса:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Получение статуса платежа
+app.get('/api/payments/status/:payload', adminMiddleware, (req, res) => {
+  try {
+    const { payload } = req.params;
+    const userId = req.user.id;
+
+    const invoice = paymentService.getInvoiceStatus(payload);
+    
+    if (!invoice) {
+      return res.status(404).json({ error: 'Инвойс не найден' });
+    }
+
+    // Проверяем права доступа
+    if (invoice.user_id !== userId && !req.user.is_admin) {
+      return res.status(403).json({ error: 'Нет доступа к этому инвойсу' });
+    }
+
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        paymentMethod: invoice.currency === 'XTR' ? 'stars' : 'crypto',
+        txHash: invoice.crypto_tx_hash,
+        confirmations: invoice.crypto_confirmations,
+        createdAt: invoice.created_at,
+        paidAt: invoice.paid_at,
+        expiresAt: invoice.expires_at,
+        orderStatus: invoice.order_status
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка получения статуса платежа:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Webhook для Telegram Stars (pre_checkout_query)
+app.post('/api/payments/stars/pre-checkout', async (req, res) => {
+  try {
+    const { pre_checkout_query } = req.body;
+    
+    if (!pre_checkout_query) {
+      return res.status(400).json({ error: 'Отсутствует pre_checkout_query' });
+    }
+
+    const validation = await paymentService.validatePreCheckout(pre_checkout_query);
+    
+    // Отвечаем Telegram
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerPreCheckoutQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pre_checkout_query_id: pre_checkout_query.id,
+        ok: validation.ok,
+        error_message: validation.error_message
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Ошибка ответа на pre_checkout_query:', await response.text());
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Ошибка обработки pre_checkout_query:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Webhook для Telegram Stars (successful_payment)
+app.post('/api/payments/stars/webhook', async (req, res) => {
+  try {
+    const { message } = req.body;
+    
+    if (!message || !message.successful_payment) {
+      return res.status(400).json({ error: 'Отсутствует successful_payment' });
+    }
+
+    await paymentService.processStarsPayment(message.successful_payment);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Ошибка обработки Stars webhook:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Ручная проверка криптоплатежей (для отладки)
+app.post('/api/payments/crypto/check', adminMiddleware, async (req, res) => {
+  try {
+    if (!req.user.is_admin) {
+      return res.status(403).json({ error: 'Только для администраторов' });
+    }
+
+    await paymentService.checkCryptoPayments();
+    
+    res.json({ success: true, message: 'Проверка криптоплатежей выполнена' });
+  } catch (error) {
+    console.error('Ошибка проверки криптоплатежей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Получение истории платежей пользователя
+app.get('/api/payments/history', adminMiddleware, (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const getPayments = db.prepare(`
+      SELECT 
+        i.*,
+        o.status as order_status,
+        p.name as product_name,
+        p.price as product_price
+      FROM invoices i
+      JOIN orders o ON i.order_id = o.id
+      JOIN products p ON i.product_id = p.id
+      WHERE i.user_id = ?
+      ORDER BY i.created_at DESC
+      LIMIT 50
+    `);
+    
+    const payments = getPayments.all(userId);
+    
+    res.json({
+      success: true,
+      payments: payments.map(payment => ({
+        id: payment.id,
+        orderId: payment.order_id,
+        productName: payment.product_name,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        paymentMethod: payment.currency === 'XTR' ? 'stars' : 'crypto',
+        txHash: payment.crypto_tx_hash,
+        createdAt: payment.created_at,
+        paidAt: payment.paid_at
+      }))
+    });
+  } catch (error) {
+    console.error('Ошибка получения истории платежей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// ===== END PAYMENT API ENDPOINTS =====
+
 // Главная страница
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -608,6 +849,29 @@ const findFreePort = (startPort) => {
     });
   });
 };
+
+// Настройка автоматических задач для платежей
+if (paymentService) {
+  // Проверка криптоплатежей каждые 2 минуты
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      await paymentService.checkCryptoPayments();
+    } catch (error) {
+      console.error('Ошибка автоматической проверки криптоплатежей:', error);
+    }
+  });
+
+  // Очистка просроченных инвойсов каждые 10 минут
+  cron.schedule('*/10 * * * *', () => {
+    try {
+      paymentService.cancelExpiredInvoices();
+    } catch (error) {
+      console.error('Ошибка очистки просроченных инвойсов:', error);
+    }
+  });
+
+  console.log('✅ Автоматические задачи платежей настроены');
+}
 
 // Запуск сервера
 const startServer = async () => {

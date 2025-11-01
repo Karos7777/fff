@@ -1082,6 +1082,54 @@ async function loadOrders() {
     return [];
   }
 
-function orderProduct(productId) {
-  alert('Функция заказа товара пока не реализована. ID товара: ' + productId);
+// Функция заказа товара с интеграцией платежей
+async function orderProduct(productId) {
+  try {
+    // Проверяем авторизацию
+    if (!currentUser) {
+      alert('Для заказа необходимо авторизоваться');
+      return;
+    }
+
+    // Находим товар
+    const product = products.find(p => p.id === productId);
+    if (!product) {
+      alert('Товар не найден');
+      return;
+    }
+
+    // Создаем заказ
+    const response = await fetch('/api/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        product_id: productId
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Ошибка создания заказа');
+    }
+
+    // Показываем опции оплаты
+    if (window.paymentManager) {
+      window.paymentManager.showPaymentOptions(
+        data.id, 
+        productId, 
+        product.name, 
+        product.price
+      );
+    } else {
+      alert('Система платежей недоступна');
+    }
+
+  } catch (error) {
+    console.error('Ошибка заказа:', error);
+    alert('Ошибка при создании заказа: ' + error.message);
+  }
 }
