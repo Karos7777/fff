@@ -616,7 +616,7 @@ const startServer = async () => {
     // Иначе ищем свободный порт для локальной разработки
     const targetPort = process.env.PORT ? PORT : await findFreePort(PORT);
     
-    app.listen(targetPort, () => {
+    app.listen(targetPort, '0.0.0.0', () => {
       console.log(`🚀 Сервер запущен на порту ${targetPort}`);
       console.log(`🏠 Главная страница: http://localhost:${targetPort}`);
       console.log(`⚙️  Админ панель: http://localhost:${targetPort}/admin`);
