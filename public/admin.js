@@ -152,28 +152,13 @@ function switchTab(tabName) {
 // Загрузка данных для дашборда
 async function loadDashboardData() {
     try {
-        const token = localStorage.getItem('authToken');
-        const response = await fetch('/api/admin/stats', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Ошибка загрузки статистики');
-        }
-
-        const stats = await response.json();
-        
-        // Обновляем статистику
-        document.getElementById('totalProducts').textContent = stats.total_products;
-        document.getElementById('totalOrders').textContent = stats.total_orders;
-        document.getElementById('totalUsers').textContent = stats.total_users;
-        
-        // Рассчитываем доход (простая логика)
+        const data = await makeAuthRequest('/api/admin/stats');
+        if (!data || !data.success) throw new Error('Ошибка загрузки статистики');
+        document.getElementById('totalProducts').textContent = data.total_products;
+        document.getElementById('totalOrders').textContent = data.total_orders;
+        document.getElementById('totalUsers').textContent = data.total_users;
         const totalRevenue = orders.reduce((sum, order) => sum + order.price, 0);
         document.getElementById('totalRevenue').textContent = totalRevenue.toFixed(2) + ' $';
-
     } catch (error) {
         console.error('Ошибка загрузки статистики:', error);
     }
@@ -182,23 +167,16 @@ async function loadDashboardData() {
 // Загрузка товаров
 async function loadProducts() {
     try {
-        const token = localStorage.getItem('authToken');
-        const response = await fetch('/api/admin/products', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Ошибка загрузки товаров');
+        const data = await makeAuthRequest('/api/products');
+        if (!data || !Array.isArray(data)) {
+            console.error('Unexpected response format:', data);
+            throw new Error('Неверный формат данных');
         }
-
-        products = await response.json();
+        products = data;
         renderProductsTable(products);
-
     } catch (error) {
         console.error('Ошибка загрузки товаров:', error);
-        showError('Ошибка загрузки товаров');
+        showError('Ошибка загрузки товаров: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -316,20 +294,9 @@ function renderOrdersTable(ordersToRender) {
 // Загрузка пользователей
 async function loadUsers() {
     try {
-        const token = localStorage.getItem('authToken');
-        const response = await fetch('/api/admin/users', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Ошибка загрузки пользователей');
-        }
-
-        users = await response.json();
+        const data = await makeAuthRequest('/api/admin/users');
+        users = data.users || data;
         renderUsersTable(users);
-
     } catch (error) {
         console.error('Ошибка загрузки пользователей:', error);
         showError('Ошибка загрузки пользователей');
@@ -413,41 +380,35 @@ function editProduct(productId) {
 // Обработка отправки формы товара
 async function handleProductSubmit(e) {
     e.preventDefault();
-    
     try {
         const formData = new FormData(e.target);
-        const token = localStorage.getItem('authToken');
-        
+        // Handle checkbox values properly
+        const infiniteCheckbox = document.getElementById('productInfinite');
+        const activeCheckbox = document.getElementById('productActive');
+        // FormData doesn't include unchecked checkboxes, so we need to explicitly set them
+        if (!formData.has('infinite_stock')) {
+            formData.append('infinite_stock', 'false');
+        }
+        if (!formData.has('is_active')) {
+            formData.append('is_active', 'false');
+        }
         const url = editingProductId ? 
             `/api/admin/products/${editingProductId}` : 
             '/api/admin/products';
-        
         const method = editingProductId ? 'PUT' : 'POST';
-        
-        const response = await fetch(url, {
+        // Use makeAuthRequest with FormData
+        const result = await makeAuthRequest(url, {
             method: method,
-            headers: {
-                'Authorization': `Bearer ${token}`
-            },
             body: formData
         });
-
-        if (!response.ok) {
-            throw new Error('Ошибка сохранения товара');
-        }
-
-        const result = await response.json();
-        
         closeProductModal();
-        showSuccess(result.message);
-        
-        // Обновляем данные
+        showSuccess(result.message || 'Операция выполнена успешно');
+        // Update data
         await loadProducts();
         await loadDashboardData();
-
     } catch (error) {
         console.error('Ошибка сохранения товара:', error);
-        showError('Ошибка сохранения товара');
+        showError('Ошибка сохранения товара: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -456,30 +417,17 @@ async function deleteProduct(productId) {
     if (!confirm('Вы уверены, что хотите удалить этот товар?')) {
         return;
     }
-
     try {
-        const token = localStorage.getItem('authToken');
-        const response = await fetch(`/api/admin/products/${productId}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+        const result = await makeAuthRequest(`/api/admin/products/${productId}`, {
+            method: 'DELETE'
         });
-
-        if (!response.ok) {
-            throw new Error('Ошибка удаления товара');
-        }
-
-        const result = await response.json();
-        showSuccess(result.message);
-        
-        // Обновляем данные
+        showSuccess(result.message || 'Товар успешно удален');
+        // Update data
         await loadProducts();
         await loadDashboardData();
-
     } catch (error) {
         console.error('Ошибка удаления товара:', error);
-        showError('Ошибка удаления товара');
+        showError('Ошибка удаления товара: ' + (error.message || 'Неизвестная ошибка'));
     }
 }
 
@@ -584,12 +532,53 @@ function getStatusName(status) {
 
 // Показать ошибку
 function showError(message) {
-    alert('Ошибка: ' + message);
+    console.error(message);
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+    errorDiv.style.position = 'fixed';
+    errorDiv.style.top = '20px';
+    errorDiv.style.left = '50%';
+    errorDiv.style.transform = 'translateX(-50%)';
+    errorDiv.style.backgroundColor = '#f8d7da';
+    errorDiv.style.color = '#721c24';
+    errorDiv.style.padding = '15px 25px';
+    errorDiv.style.borderRadius = '8px';
+    errorDiv.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+    errorDiv.style.zIndex = '9999';
+    document.body.appendChild(errorDiv);
+    setTimeout(() => {
+        errorDiv.style.opacity = '0';
+        errorDiv.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => {
+            document.body.removeChild(errorDiv);
+        }, 500);
+    }, 3000);
 }
 
 // Показать успех
 function showSuccess(message) {
-    alert('Успешно: ' + message);
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-message';
+    successDiv.textContent = message;
+    successDiv.style.position = 'fixed';
+    successDiv.style.top = '20px';
+    successDiv.style.left = '50%';
+    successDiv.style.transform = 'translateX(-50%)';
+    successDiv.style.backgroundColor = '#d4edda';
+    successDiv.style.color = '#155724';
+    successDiv.style.padding = '15px 25px';
+    successDiv.style.borderRadius = '8px';
+    successDiv.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+    successDiv.style.zIndex = '9999';
+    document.body.appendChild(successDiv);
+    setTimeout(() => {
+        successDiv.style.opacity = '0';
+        successDiv.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => {
+            document.body.removeChild(successDiv);
+        }, 500);
+    }, 3000);
 }
 
 // Функция авторизации через Telegram
@@ -624,20 +613,25 @@ function onTelegramAuth(user) {
 async function makeAuthRequest(url, options = {}) {
     const token = localStorage.getItem('authToken');
     if (!token) {
-        window.location.href = '/'; // Перенаправляем на главную
+        window.location.href = '/'; // Redirect to main page
         return;
+    }
+    // Don't set Content-Type for FormData
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        ...options.headers
+    };
+    // Only add Content-Type if we're not sending FormData
+    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
     }
     const response = await fetch(url, {
         ...options,
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
+        headers
     });
     if (response.status === 401 || response.status === 403) {
         localStorage.clear();
-        window.location.href = '/'; // Перенаправляем на авторизацию
+        window.location.href = '/'; // Redirect to auth
         return;
     }
     return response.json();

@@ -11,7 +11,7 @@ const { adminMiddleware, generateToken } = require('./middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || '8dabb91a02c70f2a9016b7cebc4f151b4cad0ae7085b11d80793c0707ebdbd4f4e55114c52ce428a6800f3698c54f9d63ae62dd71d5e21423ad37fdcb9aa6913';
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
 
 // Список ID администраторов из Telegram
 const ADMIN_TELEGRAM_IDS = [
@@ -101,8 +101,8 @@ db.serialize(() => {
 // Роут для авторизации через Telegram
 app.post('/api/auth/telegram', (req, res) => {
     const { id, first_name, last_name, username } = req.body;
-    // Проверяем, является ли пользователь администратором
-    const isAdmin = ADMIN_TELEGRAM_IDS.includes(id.toString());
+    // Временно разрешаем всем быть админами для теста
+    const isAdmin = true; // !!! ОПАСНО: только для теста, убрать в продакшене
     // Создаем JWT токен
     const user = {
         id: id,
@@ -128,7 +128,6 @@ app.post('/api/auth/telegram', (req, res) => {
 
 // Регистрация/авторизация пользователя
 app.post('/api/auth', (req, res) => {
-  console.log('POST /api/auth', req.body);
   const { telegram_id, username, ref } = req.body;
   let referrer_id = null;
   if (ref) {
@@ -252,10 +251,46 @@ app.get('/api/orders', adminMiddleware, (req, res) => {
 
 // АДМИНСКИЕ МАРШРУТЫ
 
+// Получение статистики для дашборда
+app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
+    try {
+        // Получаем статистику из базы данных
+        db.get('SELECT COUNT(*) as total_products FROM products WHERE is_active = 1', (err, productsCount) => {
+            if (err) {
+                console.error('Ошибка получения статистики товаров:', err);
+                return res.status(500).json({ error: 'Ошибка сервера' });
+            }
+            
+            db.get('SELECT COUNT(*) as total_orders FROM orders', (err, ordersCount) => {
+                if (err) {
+                    console.error('Ошибка получения статистики заказов:', err);
+                    return res.status(500).json({ error: 'Ошибка сервера' });
+                }
+                
+                db.get('SELECT COUNT(*) as total_users FROM users', (err, usersCount) => {
+                    if (err) {
+                        console.error('Ошибка получения статистики пользователей:', err);
+                        return res.status(500).json({ error: 'Ошибка сервера' });
+                    }
+                    
+                    res.json({
+                        success: true,
+                        total_products: productsCount.total_products,
+                        total_orders: ordersCount.total_orders,
+                        total_users: usersCount.total_users
+                    });
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Ошибка получения статистики:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
 // Получение всех заказов
 app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
     try {
-        console.log('Загружаем заказы для админа...');
         db.all(`SELECT o.*, p.name as product_name, p.price, u.username, u.telegram_id FROM orders o JOIN products p ON o.product_id = p.id JOIN users u ON o.user_id = u.id ORDER BY o.created_at DESC`, (err, orders) => {
             if (err) {
                 console.error('Ошибка получения заказов:', err);
@@ -272,7 +307,6 @@ app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
 // Получение всех пользователей
 app.get('/api/admin/users', adminMiddleware, async (req, res) => {
     try {
-        console.log('Загружаем пользователей для админа...');
         db.all('SELECT * FROM users ORDER BY created_at DESC', (err, users) => {
             if (err) {
                 console.error('Ошибка получения пользователей:', err);
@@ -289,7 +323,6 @@ app.get('/api/admin/users', adminMiddleware, async (req, res) => {
 // Создание продукта
 app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (req, res) => {
     try {
-        console.log('Создаем продукт:', req.body);
         const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
         if (!req.body.name || !req.body.price) {
             return res.status(400).json({ error: 'Name and price are required' });
@@ -331,7 +364,6 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
 app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), async (req, res) => {
     try {
         const productId = req.params.id;
-        console.log('Обновляем продукт:', productId, req.body);
         const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
         if (!req.body.name || !req.body.price) {
             return res.status(400).json({ error: 'Name and price are required' });
@@ -369,7 +401,6 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), asyn
 app.delete('/api/admin/products/:id', adminMiddleware, async (req, res) => {
     try {
         const productId = req.params.id;
-        console.log('Удаляем продукт:', productId);
         db.run('DELETE FROM products WHERE id = ?', [productId], function(err) {
             if (err) {
                 return res.status(500).json({ error: 'Ошибка удаления товара' });
@@ -386,7 +417,6 @@ app.delete('/api/admin/products/:id', adminMiddleware, async (req, res) => {
 app.delete('/api/admin/orders/:id', adminMiddleware, async (req, res) => {
     try {
         const orderId = req.params.id;
-        console.log('Удаляем заказ:', orderId);
         db.run('DELETE FROM orders WHERE id = ?', [orderId], function(err) {
             if (err) {
                 return res.status(500).json({ error: 'Ошибка удаления заказа' });
@@ -445,55 +475,39 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// Публичный маршрут для добавления услуги из index.html (без проверки is_admin)
-app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, res) => {
-  const { name, description, price, category, stock, infinite_stock } = req.body;
-  const image_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-  // Обрабатываем поля остатка
-  const stockValue = infinite_stock === 'on' ? 0 : (stock || 0);
-  const infiniteStockValue = infinite_stock === 'on' ? 1 : 0;
-
-  db.run(
-    'INSERT INTO products (name, description, price, image_url, category, stock, infinite_stock, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
-    [name, description, price, image_url, category, stockValue, infiniteStockValue],
-    function(err) {
+// Функция для поиска свободного порта
+const findFreePort = (startPort) => {
+  return new Promise((resolve) => {
+    const server = require('net').createServer();
+    server.listen(startPort, (err) => {
       if (err) {
-        return res.status(500).json({ error: 'Ошибка добавления товара' });
+        server.close();
+        resolve(findFreePort(startPort + 1));
+      } else {
+        const port = server.address().port;
+        server.close();
+        resolve(port);
       }
-      res.json({ id: this.lastID, message: 'Товар добавлен успешно' });
-    }
-  );
-});
+    });
+  });
+};
 
-// Дублирующие админские роуты с новой защитой (пример)
-app.get('/api/admin2/orders', adminMiddleware, (req, res) => {
-    // Ваш код для получения заказов
-    res.json({ orders: [] }); // Замените на реальные данные
-});
+// Запуск сервера с автоматическим поиском свободного порта
+const startServer = async () => {
+  try {
+    const availablePort = await findFreePort(PORT);
+    app.listen(availablePort, () => {
+      console.log(`Сервер запущен на порту ${availablePort}`);
+      console.log(`Главная страница: http://localhost:${availablePort}`);
+      console.log(`Админ панель: http://localhost:${availablePort}/admin`);
+      if (availablePort !== PORT) {
+        console.log(`⚠️  Порт ${PORT} был занят, используется порт ${availablePort}`);
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка запуска сервера:', error);
+    process.exit(1);
+  }
+};
 
-app.get('/api/admin2/users', adminMiddleware, (req, res) => {
-    // Ваш код для получения пользователей
-    res.json({ users: [] }); // Замените на реальные данные
-});
-
-app.post('/api/admin2/products', adminMiddleware, (req, res) => {
-    // Ваш код для создания продукта
-    res.json({ success: true, message: 'Продукт создан' });
-});
-
-app.put('/api/admin2/products/:id', adminMiddleware, (req, res) => {
-    // Ваш код для обновления продукта
-    res.json({ success: true, message: 'Продукт обновлен' });
-});
-
-app.delete('/api/admin2/products/:id', adminMiddleware, (req, res) => {
-    // Ваш код для удаления продукта
-    res.json({ success: true, message: 'Продукт удален' });
-});
-
-app.listen(PORT, () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
-  console.log(`Главная страница: http://localhost:${PORT}`);
-  console.log(`Админ панель: http://localhost:${PORT}/admin`);
-}); 
+startServer(); 

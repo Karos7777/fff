@@ -12,6 +12,10 @@ let currentFilters = {
   stock: ''
 };
 
+// Экспортируем переменные в window для совместимости
+window.currentUser = currentUser;
+window.orders = orders;
+
 // Локализация
 const translations = {
     ru: {
@@ -25,6 +29,8 @@ const translations = {
       send: 'Отправить',
       error: 'Ошибка',
       details: 'Подробнее',
+      langRu: 'Русский',
+      langEn: 'English',
       
       // Авторизация
       authTitle: 'Войти в магазин',
@@ -52,6 +58,10 @@ const translations = {
       stockLow: 'Ограниченное количество',
       noProducts: 'Товары не найдены',
       tryChangeFilters: 'Попробуйте изменить фильтры поиска',
+      priceTo1000: 'До 1000 ₽',
+      price1000_5000: '1000-5000 ₽',
+      price5000_10000: '5000-10000 ₽',
+      priceMore10000: 'Более 10000 ₽',
   
       // Категории
       popularCategories: 'Популярные категории',
@@ -140,6 +150,8 @@ const translations = {
       send: 'Send',
       error: 'Error',
       details: 'Details',
+      langRu: 'Русский',
+      langEn: 'English',
   
       // Auth
       authTitle: 'Login to the Shop',
@@ -167,6 +179,10 @@ const translations = {
       stockLow: 'Limited stock',
       noProducts: 'No products found',
       tryChangeFilters: 'Try changing the search filters',
+      priceTo1000: 'Up to $10',
+      price1000_5000: '$10-$50',
+      price5000_10000: '$50-$100',
+      priceMore10000: 'More than $100',
   
       // Categories
       popularCategories: 'Popular Categories',
@@ -198,22 +214,22 @@ const translations = {
       // Orders
       myOrders: 'My Orders',
       statusPending: 'Pending',
-      statusProcessing: 'PROCESSING',
-      statusCompleted: 'COMPLETED',
-      statusCancelled: 'CANCELLED',
+      statusProcessing: 'Processing',
+      statusCompleted: 'Completed',
+      statusCancelled: 'Cancelled',
   
       // Support
       support: 'Support',
       supportTitle: 'Support',
       faq: 'Frequently Asked Questions',
-      faq1_q: 'How to pay for an order?',
-      faq1_a: 'Payment is made in USDT via Arbitrum or Optimism blockchains.',
-      faq2_q: 'How long does fulfillment take?',
-      faq2_a: 'Fulfillment time depends on the service complexity, usually 1-7 days.',
+      faq1_q: 'How to pay for the order?',
+      faq1_a: 'Payment is made in USDT through Arbitrum or Optimism blockchains.',
+      faq2_q: 'How long does it take to complete?',
+      faq2_a: 'Completion time depends on the complexity of the service, usually 1-7 days.',
       contactUs: 'Contact Us',
-      contactTelegram: 'Contact via Telegram',
+      contactTelegram: 'Write to Telegram',
   
-      // Admin Panel & Modals
+      // Admin panel and modals
       addService: 'Add Service',
       addServiceTitle: 'Add Service',
       formName: 'Name *',
@@ -225,26 +241,26 @@ const translations = {
       formImage: 'Image',
       save: 'Save',
       confirmDelete: 'Are you sure you want to delete this product?',
-  
-      // Order Modal
-      orderModalTitle: 'Checkout',
+      
+      // Order modal
+      orderModalTitle: 'Order Processing',
       orderSummaryTitle: 'Order Summary',
       paymentMethodTitle: 'Payment Method',
       confirmPayment: 'Pay',
   
-      // Reviews Modal
+      // Reviews modal
       reviewsModalTitle: 'Product Reviews',
       leaveReviewTitle: 'Leave a Review',
-      yourRating: 'Your rating:',
+      yourRating: 'Rating:',
       yourReviewPlaceholder: 'Your review...',
-      sendReview: 'Submit Review',
+      sendReview: 'Send Review',
   
       // Messages
-      successAdd: 'Service added successfully!',
-      successEdit: 'Service updated successfully!',
-      successDelete: 'Service deleted successfully!',
+      successAdd: 'Service added!',
+      successEdit: 'Service updated!',
+      successDelete: 'Service deleted!',
     }
-  };
+};
 
 let currentLang = localStorage.getItem('lang') || 'ru';
 
@@ -870,18 +886,17 @@ function renderProducts(productsToRender) {
 
 // Генерация звездочек рейтинга
 function generateStars(rating) {
-    let stars = '';
-    for (let i = 1; i <= 5; i++) {
-        if (i <= rating) {
-            stars += '<span class="star">★</span>';
-        } else if (i - rating < 1) {
-            stars += '<span class="star">★</span>'; // Полная звезда для простоты
-        } else {
-            stars += '<span class="star empty">★</span>';
-        }
-    }
-    return stars;
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 !== 0;
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+    
+    return '★'.repeat(fullStars) + 
+           (hasHalfStar ? '☆' : '') + 
+           '☆'.repeat(emptyStars);
 }
+
+// Экспортируем функцию в window для совместимости
+window.generateStars = generateStars;
 
 // Переключение избранного
 function toggleFavorite(productId) {
@@ -1066,3 +1081,7 @@ async function loadOrders() {
     // Заглушка, чтобы не было ошибки
     return [];
   }
+
+function orderProduct(productId) {
+  alert('Функция заказа товара пока не реализована. ID товара: ' + productId);
+}
