@@ -201,11 +201,22 @@ try {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     telegram_id TEXT UNIQUE,
     username TEXT,
+    first_name TEXT,
+    last_name TEXT,
     is_admin BOOLEAN DEFAULT 0,
     referrer_id INTEGER,
     referral_earnings REAL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  
+  // Добавляем новые колонки если их нет (для существующих баз данных)
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN first_name TEXT`);
+  } catch (e) { /* колонка уже существует */ }
+  
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN last_name TEXT`);
+  } catch (e) { /* колонка уже существует */ }
 
   // Таблица товаров
   db.exec(`CREATE TABLE IF NOT EXISTS products (
@@ -321,7 +332,7 @@ app.post('/api/auth/telegram', (req, res) => {
 // Регистрация/авторизация пользователя
 app.post('/api/auth', (req, res) => {
   try {
-    const { telegram_id, username, ref } = req.body;
+    const { telegram_id, username, first_name, last_name, ref } = req.body;
     let referrer_id = null;
     if (ref) {
       referrer_id = parseInt(ref, 10);
@@ -332,27 +343,38 @@ app.post('/api/auth', (req, res) => {
     const user = getUser.get(telegram_id);
     
     if (user) {
-      // Пользователь существует
+      // Пользователь существует - обновляем данные если нужно
+      if (first_name || last_name) {
+        const updateUser = db.prepare('UPDATE users SET first_name = ?, last_name = ? WHERE id = ?');
+        updateUser.run(first_name || user.first_name, last_name || user.last_name, user.id);
+        user.first_name = first_name || user.first_name;
+        user.last_name = last_name || user.last_name;
+      }
+      
       const token = generateToken(user);
       res.json({ 
         token, 
         user: { 
           id: user.id, 
           telegram_id: user.telegram_id, 
-          username: user.username, 
+          username: user.username,
+          first_name: user.first_name,
+          last_name: user.last_name,
           is_admin: user.is_admin, 
           referrer_id: user.referrer_id 
         } 
       });
     } else {
       // Создаем нового пользователя
-      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, referrer_id) VALUES (?, ?, ?)');
-      const result = insertUser.run(telegram_id, username, referrer_id);
+      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id) VALUES (?, ?, ?, ?, ?)');
+      const result = insertUser.run(telegram_id, username, first_name, last_name, referrer_id);
       
       const newUser = {
         id: result.lastInsertRowid,
         telegram_id,
         username,
+        first_name,
+        last_name,
         is_admin: false
       };
       
@@ -362,10 +384,12 @@ app.post('/api/auth', (req, res) => {
         user: { 
           id: result.lastInsertRowid, 
           telegram_id, 
-          username, 
+          username,
+          first_name,
+          last_name,
           is_admin: false, 
           referrer_id 
-        }
+        } 
       });
     }
   } catch (error) {
@@ -1210,23 +1234,26 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
       return res.status(404).json({ error: 'Товар не найден' });
     }
     
-    // Проверяем, есть ли активные заказы с этим товаром
+    // Проверяем, есть ли активные заказы у товара
     const getActiveOrders = db.prepare(`
       SELECT COUNT(*) as count FROM orders 
       WHERE product_id = ? AND status IN ('pending', 'pending_crypto', 'paid')
     `);
     const activeOrders = getActiveOrders.get(productId);
     
-    if (activeOrders.count > 0) {
-      return res.status(400).json({ 
-        error: 'Нельзя удалить товар с активными заказами',
-        active_orders: activeOrders.count
-      });
-    }
-    
-    // Удаляем товар
+    // Удаляем связанные данные в правильном порядке (включая активные заказы)
+    const deleteReviews = db.prepare('DELETE FROM reviews WHERE product_id = ?');
+    const deleteOrders = db.prepare('DELETE FROM orders WHERE product_id = ?');
     const deleteProduct = db.prepare('DELETE FROM products WHERE id = ?');
-    deleteProduct.run(productId);
+    
+    // Выполняем удаление в транзакции
+    const deleteTransaction = db.transaction(() => {
+      deleteReviews.run(productId);
+      deleteOrders.run(productId);
+      deleteProduct.run(productId);
+    });
+    
+    deleteTransaction();
     
     res.json({ 
       success: true, 

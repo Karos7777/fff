@@ -508,21 +508,21 @@ async function autoAuth() {
         // Получаем данные пользователя из Telegram Web App
         const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
         
-        if (!telegramUser) {
+        if (!telegramUser || !telegramUser.id) {
             // Если нет данных Telegram, используем тестовые данные для разработки
             console.log('⚠️ Данные Telegram не найдены, используем тестовый режим');
             const testUser = {
                 id: 853232715, // Админский ID для тестирования
-                username: 'test_admin',
-                first_name: 'Test',
-                last_name: 'Admin'
+                username: 'admin',
+                first_name: 'Admin',
+                last_name: 'User'
             };
-            await authenticateUser(testUser.id, testUser.username);
+            await authenticateUser(testUser.id, testUser.username, testUser.first_name, testUser.last_name);
             return;
         }
         
         // Автоматически авторизуем пользователя
-        await authenticateUser(telegramUser.id, telegramUser.username);
+        await authenticateUser(telegramUser.id, telegramUser.username, telegramUser.first_name, telegramUser.last_name);
         
     } catch (error) {
         console.error('Ошибка автоматической авторизации:', error);
@@ -560,21 +560,23 @@ async function handleAuth() {
 }
 
 // Авторизация пользователя
-async function authenticateUser(telegramId, username) {
+async function authenticateUser(telegramId, username, firstName, lastName) {
     try {
-        console.log('Отправка на /api/auth:', {
-            telegram_id: telegramId?.toString(),
-            username: username || ('user_' + telegramId)
-        });
+        const authData = {
+            telegram_id: telegramId.toString(),
+            username: username || 'user_' + telegramId,
+            first_name: firstName || '',
+            last_name: lastName || ''
+        };
+        
+        console.log('Отправка на /api/auth:', authData);
+        
         const response = await fetch('/api/auth', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                telegram_id: telegramId.toString(),
-                username: username || 'user_' + telegramId
-            })
+            body: JSON.stringify(authData)
         });
 
         if (!response.ok) {
@@ -1143,7 +1145,18 @@ function showUserInfo() {
   if (!currentUser) return;
   
   document.getElementById('userInfo').style.display = 'flex';
-  document.getElementById('userName').textContent = currentUser.username || 'Пользователь';
+  
+  // Формируем отображаемое имя пользователя
+  let displayName = '';
+  if (currentUser.first_name || currentUser.last_name) {
+    displayName = `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim();
+  } else if (currentUser.username) {
+    displayName = currentUser.username;
+  } else {
+    displayName = 'Пользователь';
+  }
+  
+  document.getElementById('userName').textContent = displayName;
 
   // Показываем админ-кнопку, если is_admin
   if (currentUser.is_admin) {
