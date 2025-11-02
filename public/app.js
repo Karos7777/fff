@@ -320,7 +320,8 @@ function initializeApp() {
         // Пытаемся восстановить сессию
         restoreSession(token);
     } else {
-        showAuthSection();
+        // Автоматически пытаемся авторизоваться
+        autoAuth();
     }
 
     // Загружаем данные из localStorage
@@ -497,6 +498,28 @@ function setupModalListeners() {
             }
         });
     });
+}
+
+// Автоматическая авторизация при загрузке
+async function autoAuth() {
+    try {
+        // Получаем данные пользователя из Telegram Web App
+        const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+        
+        if (!telegramUser) {
+            // Если нет данных Telegram, показываем форму авторизации
+            showAuthSection();
+            return;
+        }
+        
+        // Автоматически авторизуем пользователя
+        await authenticateUser(telegramUser.id, telegramUser.username);
+        
+    } catch (error) {
+        console.error('Ошибка автоматической авторизации:', error);
+        // В случае ошибки показываем форму авторизации
+        showAuthSection();
+    }
 }
 
 // Обработка авторизации
@@ -877,6 +900,11 @@ function renderProducts(productsToRender) {
                         <button class="btn-success" onclick="orderProduct(${product.id})" ${!isAvailable ? 'disabled' : ''}>
                             ${!isAvailable ? translations[currentLang].outOfStock : translations[currentLang].order}
                         </button>
+                        ${currentUser && currentUser.is_admin ? `
+                            <button class="btn-danger" onclick="deleteProduct(${product.id})" title="Удалить товар">
+                                🗑️ Удалить
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -1081,6 +1109,50 @@ async function loadOrders() {
     // Заглушка, чтобы не было ошибки
     return [];
   }
+
+// Функция удаления товара (только для админов)
+async function deleteProduct(productId) {
+    try {
+        // Находим товар для подтверждения
+        const product = products.find(p => p.id === productId);
+        if (!product) {
+            showError('Товар не найден');
+            return;
+        }
+
+        // Подтверждение удаления
+        const confirmText = prompt(`Для подтверждения удаления товара "${product.name}" введите слово "удалить":`);
+        if (!confirmText || confirmText.toLowerCase().trim() !== 'удалить') {
+            return; // Отмена
+        }
+
+        showLoading();
+
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`/api/admin/products/${productId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка удаления товара');
+        }
+
+        showSuccess('Товар успешно удален!');
+        
+        // Перезагружаем список товаров
+        await loadProducts();
+
+    } catch (error) {
+        console.error('Ошибка удаления товара:', error);
+        showError(error.message || 'Ошибка удаления товара');
+    } finally {
+        hideLoading();
+    }
+}
 
 // Функция заказа товара с интеграцией платежей
 async function orderProduct(productId) {

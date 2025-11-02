@@ -570,9 +570,20 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
   color: var(--white);
-  box-shadow: var(--shadow-md);
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .btn-primary:hover {
@@ -583,18 +594,30 @@ body {
 .btn-secondary {
   background: var(--gray-100);
   color: var(--gray-700);
-  border: 2px solid var(--gray-200);
+  border: 1px solid var(--gray-300);
+  padding: 12px 24px;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .btn-secondary:hover {
   background: var(--gray-200);
-  color: var(--gray-800);
+  transform: translateY(-1px);
 }
 
 .btn-success {
-  background: linear-gradient(135deg, var(--secondary-color) 0%, var(--secondary-dark) 100%);
+  background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
   color: var(--white);
-  box-shadow: var(--shadow-md);
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .btn-success:hover {
@@ -603,14 +626,38 @@ body {
 }
 
 .btn-accent {
-  background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-dark) 100%);
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-dark));
   color: var(--white);
-  box-shadow: var(--shadow-md);
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .btn-accent:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, var(--error), #dc2626);
+  color: var(--white);
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-danger:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
 }
 
 /* Orders Section */
