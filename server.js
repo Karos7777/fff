@@ -548,6 +548,8 @@ app.get('/api/admin/users', adminMiddleware, (req, res) => {
   } catch (error) {
     console.error('Error getting users:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
 
 // Создание продукта
 app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, res) => {
