@@ -461,7 +461,7 @@ class PaymentService {
             for (const invoice of pendingInvoices) {
               console.log(`\n📋 Проверяем инвойс #${invoice.id} (memo: "${invoice.crypto_memo}"):`);
               
-              const memoMatch = comment.trim() === invoice.crypto_memo.trim();
+              const memoMatch = comment.trim() === (invoice.crypto_memo || '').trim();
               const amountMatch = Math.abs(amount - invoice.amount) < 0.001;
               
               console.log(`   - Точное совпадение memo: ${memoMatch}`);

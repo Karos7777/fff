@@ -264,9 +264,12 @@
 
         async function checkAdminAccess() {
             try {
+                // Получаем токен из localStorage или используем тестовый
+                const token = localStorage.getItem('token') || testToken;
+                
                 const response = await fetch('/api/user/role', {
                     headers: {
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
 
@@ -296,9 +299,10 @@
 
         async function loadProducts() {
             try {
+                const token = localStorage.getItem('token') || testToken;
                 const response = await fetch('/api/admin/products', {
                     headers: {
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
 
@@ -376,11 +380,12 @@
             };
 
             try {
+                const token = localStorage.getItem('token') || testToken;
                 const response = await fetch('/api/admin/products', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify(productData)
                 });
@@ -408,10 +413,11 @@
             }
 
             try {
+                const token = localStorage.getItem('token') || testToken;
                 const response = await fetch(`/api/admin/products/${currentDeleteProductId}`, {
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
 
@@ -436,9 +442,10 @@
                 document.getElementById('productsContainer').classList.add('hidden');
                 document.getElementById('usersContainer').classList.remove('hidden');
                 
+                const token = localStorage.getItem('token') || testToken;
                 const response = await fetch('/api/admin/users', {
                     headers: {
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
 
@@ -509,10 +516,11 @@
             }
 
             try {
+                const token = localStorage.getItem('token') || testToken;
                 const response = await fetch(`/api/admin/users/${currentDeleteUserId}`, {
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
 
@@ -537,9 +545,10 @@
                 document.getElementById('usersContainer').classList.add('hidden');
                 document.getElementById('productsContainer').classList.remove('hidden');
                 
+                const token = localStorage.getItem('token') || testToken;
                 const response = await fetch('/api/admin/products', {
                     headers: {
-                        'Authorization': `Bearer ${testToken}`
+                        'Authorization': `Bearer ${token}`
                     }
                 });
 
