@@ -707,18 +707,7 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), (req
   }
 });
 
-// Удаление продукта
-app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
-  try {
-    const productId = req.params.id;
-    const deleteProduct = db.prepare('DELETE FROM products WHERE id = ?');
-    deleteProduct.run(productId);
-    res.json({ success: true, message: 'Продукт удален успешно' });
-  } catch (error) {
-    console.error('Error deleting product:', error);
-    res.status(500).json({ error: 'Ошибка сервера' });
-  }
-});
+// Удаление продукта - перенесено в более полную версию ниже
 
 // Удаление заказа
 app.delete('/api/admin/orders/:id', adminMiddleware, (req, res) => {

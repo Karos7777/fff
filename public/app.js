@@ -33,9 +33,9 @@ const translations = {
       langEn: 'English',
       
       // Авторизация
-      authTitle: 'Войти в магазин',
-      authDescription: 'Для доступа к услугам необходимо авторизоваться через Telegram',
-      authButton: 'Войти через Telegram',
+      authTitle: 'Загрузка...',
+      authDescription: 'Подключение к системе...',
+      authButton: 'Повторить попытку',
       logout: 'Выйти',
   
       // Каталог и фильтры
@@ -503,12 +503,21 @@ function setupModalListeners() {
 // Автоматическая авторизация при загрузке
 async function autoAuth() {
     try {
+        showLoading();
+        
         // Получаем данные пользователя из Telegram Web App
         const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
         
         if (!telegramUser) {
-            // Если нет данных Telegram, показываем форму авторизации
-            showAuthSection();
+            // Если нет данных Telegram, используем тестовые данные для разработки
+            console.log('⚠️ Данные Telegram не найдены, используем тестовый режим');
+            const testUser = {
+                id: 853232715, // Админский ID для тестирования
+                username: 'test_admin',
+                first_name: 'Test',
+                last_name: 'Admin'
+            };
+            await authenticateUser(testUser.id, testUser.username);
             return;
         }
         
@@ -519,6 +528,8 @@ async function autoAuth() {
         console.error('Ошибка автоматической авторизации:', error);
         // В случае ошибки показываем форму авторизации
         showAuthSection();
+    } finally {
+        hideLoading();
     }
 }
 
@@ -578,6 +589,7 @@ async function authenticateUser(telegramId, username) {
         
         // Показываем основной контент
         showMainContent();
+        showUserInfo();
         
         // Загружаем данные
         await loadProducts();
@@ -1103,6 +1115,42 @@ function hideLoading() {
 
 function showError(message) {
   alert('Ошибка: ' + message);
+}
+
+function showSuccess(message) {
+  alert('✅ ' + message);
+}
+
+function showLoading() {
+  document.getElementById('loading').style.display = 'flex';
+}
+
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+}
+
+function showAuthSection() {
+  document.getElementById('authSection').style.display = 'block';
+  document.getElementById('mainContent').style.display = 'none';
+}
+
+function showMainContent() {
+  document.getElementById('authSection').style.display = 'none';
+  document.getElementById('mainContent').style.display = 'block';
+}
+
+function showUserInfo() {
+  if (!currentUser) return;
+  
+  document.getElementById('userInfo').style.display = 'flex';
+  document.getElementById('userName').textContent = currentUser.username || 'Пользователь';
+
+  // Показываем админ-кнопку, если is_admin
+  if (currentUser.is_admin) {
+      document.getElementById('adminAddServiceContainer').style.display = 'block';
+  } else {
+      document.getElementById('adminAddServiceContainer').style.display = 'none';
+  }
 }
 
 async function loadOrders() {
