@@ -303,13 +303,16 @@ function applyTranslations() {
 
 // Инициализация приложения
 document.addEventListener('DOMContentLoaded', function() {
-    initializeApp();
-    const langSelect = document.getElementById('langSelect');
-    if (langSelect) {
-        langSelect.value = currentLang;
-        langSelect.addEventListener('change', e => setLang(e.target.value));
-    }
-    applyTranslations();
+    // Даем время Telegram Web App для инициализации
+    setTimeout(() => {
+        initializeApp();
+        const langSelect = document.getElementById('langSelect');
+        if (langSelect) {
+            langSelect.value = currentLang;
+            langSelect.addEventListener('change', e => setLang(e.target.value));
+        }
+        applyTranslations();
+    }, 500); // Задержка 500ms для инициализации Telegram Web App
 });
 
 // Инициализация приложения
@@ -512,23 +515,81 @@ async function autoAuth() {
         console.log('- initData:', window.Telegram?.WebApp?.initData);
         console.log('- initDataUnsafe:', window.Telegram?.WebApp?.initDataUnsafe);
         
-        // Проверяем, запущено ли приложение в Telegram
-        const isInTelegram = window.Telegram?.WebApp?.initData;
+        // Инициализируем Telegram Web App если доступен
+        if (window.Telegram?.WebApp) {
+            window.Telegram.WebApp.ready();
+            console.log('📱 Telegram WebApp инициализирован');
+        }
         
-        if (isInTelegram) {
-            // Получаем данные пользователя из Telegram Web App
-            const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-            
-            if (telegramUser && telegramUser.id) {
-                console.log('✅ Данные Telegram найдены:', telegramUser);
-                // Автоматически авторизуем реального пользователя Telegram
-                await authenticateUser(telegramUser.id, telegramUser.username, telegramUser.first_name, telegramUser.last_name);
-                return;
-            } else {
-                console.log('⚠️ Пользователь Telegram не найден в initDataUnsafe');
+        // Проверяем различные способы получения данных пользователя
+        let telegramUser = null;
+        
+        // Способ 1: через initDataUnsafe
+        if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
+            telegramUser = window.Telegram.WebApp.initDataUnsafe.user;
+            console.log('✅ Пользователь найден через initDataUnsafe:', telegramUser);
+        }
+        
+        // Способ 2: парсинг initData
+        if (!telegramUser && window.Telegram?.WebApp?.initData) {
+            try {
+                const initData = window.Telegram.WebApp.initData;
+                const urlParams = new URLSearchParams(initData);
+                const userParam = urlParams.get('user');
+                if (userParam) {
+                    telegramUser = JSON.parse(decodeURIComponent(userParam));
+                    console.log('✅ Пользователь найден через парсинг initData:', telegramUser);
+                }
+            } catch (e) {
+                console.log('⚠️ Ошибка парсинга initData:', e);
             }
+        }
+        
+        // Способ 3: проверяем URL параметры
+        if (!telegramUser) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tgWebAppData = urlParams.get('tgWebAppData');
+            if (tgWebAppData) {
+                try {
+                    const decodedData = decodeURIComponent(tgWebAppData);
+                    const dataParams = new URLSearchParams(decodedData);
+                    const userParam = dataParams.get('user');
+                    if (userParam) {
+                        telegramUser = JSON.parse(userParam);
+                        console.log('✅ Пользователь найден через URL параметры:', telegramUser);
+                    }
+                } catch (e) {
+                    console.log('⚠️ Ошибка парсинга URL параметров:', e);
+                }
+            }
+        }
+        
+        // Способ 4: проверяем глобальные переменные Telegram
+        if (!telegramUser && window.TelegramWebviewProxy) {
+            console.log('📱 Найден TelegramWebviewProxy, пытаемся получить данные...');
+        }
+        
+        // Способ 5: проверяем hash в URL
+        if (!telegramUser && window.location.hash) {
+            try {
+                const hash = window.location.hash.substring(1);
+                const hashParams = new URLSearchParams(hash);
+                const userParam = hashParams.get('user');
+                if (userParam) {
+                    telegramUser = JSON.parse(decodeURIComponent(userParam));
+                    console.log('✅ Пользователь найден через hash:', telegramUser);
+                }
+            } catch (e) {
+                console.log('⚠️ Ошибка парсинга hash:', e);
+            }
+        }
+        
+        if (telegramUser && telegramUser.id) {
+            console.log('✅ Авторизуем пользователя Telegram:', telegramUser);
+            await authenticateUser(telegramUser.id, telegramUser.username, telegramUser.first_name, telegramUser.last_name);
+            return;
         } else {
-            console.log('⚠️ Приложение не запущено в Telegram, используем тестовый режим');
+            console.log('⚠️ Данные пользователя Telegram не найдены, используем тестовый режим');
         }
         
         // Если нет данных Telegram или не в Telegram, используем тестовые данные

@@ -1262,13 +1262,19 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     const activeOrders = getActiveOrders.get(productId);
     
     // Удаляем связанные данные в правильном порядке (включая активные заказы)
-    const deleteReviews = db.prepare('DELETE FROM reviews WHERE product_id = ?');
     const deleteOrders = db.prepare('DELETE FROM orders WHERE product_id = ?');
     const deleteProduct = db.prepare('DELETE FROM products WHERE id = ?');
     
     // Выполняем удаление в транзакции
     const deleteTransaction = db.transaction(() => {
-      deleteReviews.run(productId);
+      // Удаляем отзывы если таблица существует
+      try {
+        const deleteReviews = db.prepare('DELETE FROM reviews WHERE product_id = ?');
+        deleteReviews.run(productId);
+      } catch (e) {
+        console.log('Таблица reviews не существует, пропускаем');
+      }
+      
       deleteOrders.run(productId);
       deleteProduct.run(productId);
     });
