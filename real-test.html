@@ -277,10 +277,70 @@
 
         // Загружаем товары при загрузке страницы
         document.addEventListener('DOMContentLoaded', () => {
+            autoAuthUser(); // Автоматическая авторизация
             loadProducts();
             loadUserInfo();
             checkAdminAccess();
         });
+
+        // Автоматическая авторизация через Telegram WebApp
+        async function autoAuthUser() {
+            try {
+                // Проверяем, есть ли уже токен
+                const existingToken = localStorage.getItem('token');
+                if (existingToken) {
+                    console.log('✅ Токен уже существует');
+                    return;
+                }
+
+                // Получаем данные пользователя из Telegram WebApp
+                if (window.Telegram && window.Telegram.WebApp) {
+                    const telegramUser = window.Telegram.WebApp.initDataUnsafe?.user;
+                    
+                    if (telegramUser && telegramUser.id) {
+                        console.log('🔍 Найдены данные Telegram пользователя:', telegramUser);
+                        
+                        // Автоматически авторизуем пользователя
+                        const authData = {
+                            id: telegramUser.id,
+                            first_name: telegramUser.first_name || '',
+                            last_name: telegramUser.last_name || '',
+                            username: telegramUser.username || `user_${telegramUser.id}`
+                        };
+
+                        const response = await fetch('/api/auth/telegram', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(authData)
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            localStorage.setItem('token', data.token);
+                            console.log('✅ Автоматическая авторизация успешна!');
+                            
+                            // Обновляем интерфейс
+                            document.getElementById('status').innerHTML = 
+                                `<div style="color: lightgreen;">✅ Добро пожаловать, ${telegramUser.first_name}!</div>`;
+                        } else {
+                            throw new Error('Ошибка авторизации');
+                        }
+                    } else {
+                        console.log('⚠️ Данные Telegram пользователя не найдены, используем тестовый токен');
+                        // Fallback: используем тестовый токен для разработки
+                        localStorage.setItem('token', testToken);
+                    }
+                } else {
+                    console.log('⚠️ Telegram WebApp не найден, используем тестовый токен');
+                    // Fallback: используем тестовый токен для разработки
+                    localStorage.setItem('token', testToken);
+                }
+            } catch (error) {
+                console.error('❌ Ошибка автоматической авторизации:', error);
+                // Fallback: используем тестовый токен
+                localStorage.setItem('token', testToken);
+            }
+        }
 
         // Инициализируем PaymentManager
         document.addEventListener('DOMContentLoaded', () => {

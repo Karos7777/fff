@@ -155,7 +155,8 @@
             
             <div style="margin: 20px 0;">
                 <button class="btn btn-success" onclick="showCreateProductModal()">➕ Создать товар</button>
-                <button class="btn" onclick="loadProducts()">🔄 Обновить список</button>
+                <button class="btn" onclick="loadProducts()">🔄 Обновить товары</button>
+                <button class="btn" onclick="loadUsers()">👥 Пользователи</button>
                 <a href="/real-test.html" class="btn">🏠 В магазин</a>
                 <a href="/orders.html" class="btn">📋 Заказы</a>
             </div>
@@ -164,6 +165,13 @@
                 <h3>📦 Управление товарами</h3>
                 <div id="productsList">
                     <p>Загрузка товаров...</p>
+                </div>
+            </div>
+            
+            <div id="usersContainer" class="hidden">
+                <h3>👥 Управление пользователями</h3>
+                <div id="usersList">
+                    <p>Загрузка пользователей...</p>
                 </div>
             </div>
         </div>
@@ -222,9 +230,34 @@
         </div>
     </div>
 
+    <!-- Модальное окно удаления пользователя -->
+    <div id="deleteUserModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeDeleteUserModal()">&times;</span>
+            <div class="delete-confirmation">
+                <h2>⚠️ Подтверждение удаления пользователя</h2>
+                <p>Вы действительно хотите удалить пользователя:</p>
+                <h3 id="deleteUserName"></h3>
+                <p id="deleteUserInfo"></p>
+                <p><strong>Это действие нельзя отменить!</strong></p>
+                
+                <div class="delete-input">
+                    <p>Для подтверждения введите слово <strong>"удалить"</strong>:</p>
+                    <input type="text" id="deleteUserConfirmInput" placeholder="удалить">
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-danger" onclick="confirmDeleteUser()">🗑️ Удалить пользователя</button>
+                    <button class="btn" onclick="closeDeleteUserModal()">❌ Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const testToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidGVsZWdyYW1faWQiOiIxMjM0NTY3ODkiLCJ1c2VybmFtZSI6InRlc3R1c2VyIiwicm9sZSI6InVzZXIiLCJpc19hZG1pbiI6MCwiaWF0IjoxNzYyMDU0NTAwLCJleHAiOjE3NjIxNDA5MDB9.J3_he9D_53acN15v8Q_CS-73FNMIVdb8AtX2iYajALU';
         let currentDeleteProductId = null;
+        let currentDeleteUserId = null;
 
         // Проверка прав доступа при загрузке
         document.addEventListener('DOMContentLoaded', checkAdminAccess);
@@ -396,16 +429,146 @@
             }
         }
 
+        // Функции для управления пользователями
+        async function loadUsers() {
+            try {
+                // Скрываем товары, показываем пользователей
+                document.getElementById('productsContainer').classList.add('hidden');
+                document.getElementById('usersContainer').classList.remove('hidden');
+                
+                const response = await fetch('/api/admin/users', {
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayUsers(data.users);
+                } else {
+                    throw new Error('Ошибка загрузки пользователей');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                document.getElementById('usersList').innerHTML = '<p>❌ Ошибка загрузки пользователей</p>';
+            }
+        }
+
+        function displayUsers(users) {
+            const container = document.getElementById('usersList');
+            
+            if (users.length === 0) {
+                container.innerHTML = '<p>👥 Пользователи не найдены</p>';
+                return;
+            }
+
+            container.innerHTML = users.map(user => `
+                <div class="product-card">
+                    <h3>${user.username || `user_${user.telegram_id}`}</h3>
+                    <p><strong>Telegram ID:</strong> ${user.telegram_id}</p>
+                    <p><strong>Имя:</strong> ${user.first_name || 'Не указано'} ${user.last_name || ''}</p>
+                    <p><strong>Дата регистрации:</strong> ${new Date(user.created_at).toLocaleString()}</p>
+                    
+                    <div class="product-stats">
+                        <div class="stat">📊 Заказов: ${user.total_orders}</div>
+                        <div class="stat">✅ Оплачено: ${user.paid_orders}</div>
+                        <div class="stat">💰 Потрачено: ${user.total_spent || 0} TON</div>
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-danger" onclick="showDeleteUserModal(${user.id}, '${user.username || `user_${user.telegram_id}`}', '${user.telegram_id}', ${user.total_orders}, ${user.paid_orders})">
+                            🗑️ Удалить пользователя
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showDeleteUserModal(userId, username, telegramId, totalOrders, paidOrders) {
+            currentDeleteUserId = userId;
+            document.getElementById('deleteUserName').textContent = username;
+            document.getElementById('deleteUserInfo').innerHTML = `
+                Telegram ID: ${telegramId}<br>
+                Всего заказов: ${totalOrders}, Оплачено: ${paidOrders}
+            `;
+            document.getElementById('deleteUserConfirmInput').value = '';
+            document.getElementById('deleteUserModal').style.display = 'block';
+        }
+
+        function closeDeleteUserModal() {
+            document.getElementById('deleteUserModal').style.display = 'none';
+            currentDeleteUserId = null;
+        }
+
+        async function confirmDeleteUser() {
+            const confirmText = document.getElementById('deleteUserConfirmInput').value.trim().toLowerCase();
+            
+            if (confirmText !== 'удалить') {
+                alert('❌ Для подтверждения введите "удалить"');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${currentDeleteUserId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    alert('✅ Пользователь успешно удален!');
+                    closeDeleteUserModal();
+                    loadUsers();
+                } else {
+                    const error = await response.json();
+                    alert('❌ Ошибка: ' + error.error);
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('❌ Ошибка удаления пользователя');
+            }
+        }
+
+        // Обновляем функцию loadProducts для переключения вкладок
+        async function loadProducts() {
+            try {
+                // Скрываем пользователей, показываем товары
+                document.getElementById('usersContainer').classList.add('hidden');
+                document.getElementById('productsContainer').classList.remove('hidden');
+                
+                const response = await fetch('/api/admin/products', {
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayProducts(data.products);
+                } else {
+                    throw new Error('Ошибка загрузки товаров');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                document.getElementById('productsList').innerHTML = '<p>❌ Ошибка загрузки товаров</p>';
+            }
+        }
+
         // Закрытие модальных окон по клику вне них
         window.onclick = function(event) {
             const createModal = document.getElementById('createProductModal');
-            const deleteModal = document.getElementById('deleteProductModal');
+            const deleteProductModal = document.getElementById('deleteProductModal');
+            const deleteUserModal = document.getElementById('deleteUserModal');
             
             if (event.target === createModal) {
                 closeCreateProductModal();
             }
-            if (event.target === deleteModal) {
+            if (event.target === deleteProductModal) {
                 closeDeleteProductModal();
+            }
+            if (event.target === deleteUserModal) {
+                closeDeleteUserModal();
             }
         }
     </script>

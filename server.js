@@ -542,12 +542,79 @@ app.get('/api/admin/orders', adminMiddleware, (req, res) => {
 // Получение всех пользователей
 app.get('/api/admin/users', adminMiddleware, (req, res) => {
   try {
-    const getUsers = db.prepare('SELECT * FROM users ORDER BY created_at DESC');
+    const getUsers = db.prepare(`
+      SELECT 
+        u.*,
+        COUNT(o.id) as total_orders,
+        SUM(CASE WHEN o.status = 'paid' THEN 1 ELSE 0 END) as paid_orders,
+        SUM(CASE WHEN o.status = 'paid' THEN o.total_amount ELSE 0 END) as total_spent
+      FROM users u
+      LEFT JOIN orders o ON u.id = o.user_id
+      GROUP BY u.id
+      ORDER BY u.created_at DESC
+    `);
     const users = getUsers.all();
     res.json({ success: true, users });
   } catch (error) {
     console.error('Error getting users:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Удаление пользователя (только для админов)
+app.delete('/api/admin/users/:id', adminMiddleware, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    // Проверяем, существует ли пользователь
+    const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
+    const user = getUser.get(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    
+    // Проверяем, не удаляет ли админ сам себя
+    if (user.telegram_id === req.user.telegram_id) {
+      return res.status(400).json({ error: 'Нельзя удалить самого себя' });
+    }
+    
+    // Проверяем, есть ли активные заказы у пользователя
+    const getActiveOrders = db.prepare(`
+      SELECT COUNT(*) as count FROM orders 
+      WHERE user_id = ? AND status IN ('pending', 'pending_crypto', 'paid')
+    `);
+    const activeOrders = getActiveOrders.get(userId);
+    
+    if (activeOrders.count > 0) {
+      return res.status(400).json({ 
+        error: 'Нельзя удалить пользователя с активными заказами',
+        active_orders: activeOrders.count
+      });
+    }
+    
+    // Удаляем связанные данные в правильном порядке
+    const deleteReviews = db.prepare('DELETE FROM reviews WHERE user_id = ?');
+    const deleteOrders = db.prepare('DELETE FROM orders WHERE user_id = ?');
+    const deleteUser = db.prepare('DELETE FROM users WHERE id = ?');
+    
+    // Выполняем удаление в транзакции
+    const deleteTransaction = db.transaction(() => {
+      deleteReviews.run(userId);
+      deleteOrders.run(userId);
+      deleteUser.run(userId);
+    });
+    
+    deleteTransaction();
+    
+    res.json({ 
+      success: true, 
+      message: 'Пользователь успешно удален',
+      deleted_user: user
+    });
+  } catch (error) {
+    console.error('Ошибка удаления пользователя:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
 
