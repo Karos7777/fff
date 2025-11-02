@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { adminMiddleware, generateToken } = require('./middleware');
+const { adminMiddleware, authMiddleware, generateToken } = require('./middleware');
 const PaymentService = require('./payment-service');
 const cron = require('node-cron');
 
@@ -130,28 +130,53 @@ try {
 
 // Роут для авторизации через Telegram
 app.post('/api/auth/telegram', (req, res) => {
-    const { id, first_name, last_name, username } = req.body;
-    // Временно разрешаем всем быть админами для теста
-    const isAdmin = true; // !!! ОПАСНО: только для теста, убрать в продакшене
-    // Создаем JWT токен
-    const user = {
-        id: id,
-        telegram_id: id,
-        username: username,
-        is_admin: isAdmin
-    };
-    const token = generateToken(user);
-    res.json({
-        success: true,
-        token: token,
-        user: {
-            telegramId: id,
-            firstName: first_name,
-            lastName: last_name,
-            username: username,
-            role: isAdmin ? 'admin' : 'user'
+    try {
+        const { id, first_name, last_name, username } = req.body;
+        
+        if (!id) {
+            return res.status(400).json({ error: 'ID пользователя не предоставлен' });
         }
-    });
+        
+        // Проверяем, есть ли пользователь в базе
+        let getUser = db.prepare('SELECT * FROM users WHERE telegram_id = ?');
+        let user = getUser.get(id.toString());
+        
+        // Если пользователя нет, создаем его
+        if (!user) {
+            const insertUser = db.prepare(`
+                INSERT INTO users (telegram_id, username, is_admin) 
+                VALUES (?, ?, ?)
+            `);
+            const result = insertUser.run(id.toString(), username || '', false);
+            
+            user = {
+                id: result.lastInsertRowid,
+                telegram_id: id.toString(),
+                username: username || '',
+                is_admin: false
+            };
+        }
+        
+        // Создаем JWT токен
+        const token = generateToken(user);
+        
+        res.json({
+            success: true,
+            token: token,
+            user: {
+                id: user.id,
+                telegramId: user.telegram_id,
+                firstName: first_name,
+                lastName: last_name,
+                username: user.username,
+                role: user.is_admin ? 'admin' : 'user',
+                isAdmin: user.is_admin
+            }
+        });
+    } catch (error) {
+        console.error('Error in Telegram auth:', error);
+        res.status(500).json({ error: 'Ошибка авторизации' });
+    }
 });
 
 // API маршруты
@@ -274,7 +299,7 @@ app.get('/api/products/:id', (req, res) => {
 });
 
 // Создание заказа
-app.post('/api/orders', adminMiddleware, (req, res) => {
+app.post('/api/orders', authMiddleware, (req, res) => {
   try {
     const { product_id } = req.body;
     const user_id = req.user.id;
@@ -307,7 +332,7 @@ app.post('/api/orders', adminMiddleware, (req, res) => {
 });
 
 // Получение заказов пользователя
-app.get('/api/orders', adminMiddleware, (req, res) => {
+app.get('/api/orders', authMiddleware, (req, res) => {
   try {
     const getOrders = db.prepare(`
       SELECT o.*, p.name as product_name, p.price 
@@ -513,7 +538,7 @@ app.get('/api/products/:id/reviews', (req, res) => {
 });
 
 // Добавить отзыв (только если есть заказ)
-app.post('/api/reviews', adminMiddleware, (req, res) => {
+app.post('/api/reviews', authMiddleware, (req, res) => {
   try {
     const { product_id, rating, text } = req.body;
     const user_id = req.user.id;
@@ -563,7 +588,7 @@ app.patch('/api/reviews/:id/hide', adminMiddleware, (req, res) => {
 });
 
 // Отправка уведомлений в Telegram (пример использования BOT_TOKEN)
-app.post('/api/notify-order', adminMiddleware, async (req, res) => {
+app.post('/api/notify-order', authMiddleware, async (req, res) => {
   const { chatId, order } = req.body;
 
   if (!BOT_TOKEN) {
@@ -597,7 +622,7 @@ app.post('/api/notify-order', adminMiddleware, async (req, res) => {
 // ===== PAYMENT API ENDPOINTS =====
 
 // Создание инвойса для Stars
-app.post('/api/payments/stars/create-invoice', adminMiddleware, async (req, res) => {
+app.post('/api/payments/stars/create-invoice', authMiddleware, async (req, res) => {
   try {
     const { orderId, productId, amount, description } = req.body;
     const userId = req.user.id;
@@ -632,7 +657,7 @@ app.post('/api/payments/stars/create-invoice', adminMiddleware, async (req, res)
 });
 
 // Создание инвойса для криптовалют
-app.post('/api/payments/crypto/create-invoice', adminMiddleware, async (req, res) => {
+app.post('/api/payments/crypto/create-invoice', authMiddleware, async (req, res) => {
   try {
     const { orderId, productId, amount, currency } = req.body;
     const userId = req.user.id;
@@ -674,7 +699,7 @@ app.post('/api/payments/crypto/create-invoice', adminMiddleware, async (req, res
 });
 
 // Получение статуса платежа
-app.get('/api/payments/status/:payload', adminMiddleware, (req, res) => {
+app.get('/api/payments/status/:payload', authMiddleware, (req, res) => {
   try {
     const { payload } = req.params;
     const userId = req.user.id;
@@ -764,7 +789,7 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
 });
 
 // Ручная проверка криптоплатежей (для отладки)
-app.post('/api/payments/crypto/check', adminMiddleware, async (req, res) => {
+app.post('/api/payments/crypto/check', authMiddleware, async (req, res) => {
   try {
     if (!req.user.is_admin) {
       return res.status(403).json({ error: 'Только для администраторов' });
@@ -780,7 +805,7 @@ app.post('/api/payments/crypto/check', adminMiddleware, async (req, res) => {
 });
 
 // Получение истории платежей пользователя
-app.get('/api/payments/history', adminMiddleware, (req, res) => {
+app.get('/api/payments/history', authMiddleware, (req, res) => {
   try {
     const userId = req.user.id;
     
