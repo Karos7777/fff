@@ -1,3 +1,50 @@
+// Версия приложения (обновляйте при каждом изменении)
+const APP_VERSION = '2.0.0';
+
+// Проверка версии и очистка кеша при обновлении
+(function checkVersion() {
+  const storedVersion = localStorage.getItem('appVersion');
+  console.log('🔄 [VERSION] Текущая версия:', APP_VERSION);
+  console.log('🔄 [VERSION] Сохраненная версия:', storedVersion);
+  
+  if (storedVersion !== APP_VERSION) {
+    console.log('⚠️ [VERSION] Обнаружено обновление! Очистка кеша...');
+    
+    // Сохраняем важные данные перед очисткой
+    const authToken = localStorage.getItem('authToken');
+    const currentUserData = localStorage.getItem('currentUser');
+    
+    // Очищаем localStorage
+    localStorage.clear();
+    
+    // Восстанавливаем важные данные
+    if (authToken) localStorage.setItem('authToken', authToken);
+    if (currentUserData) localStorage.setItem('currentUser', currentUserData);
+    
+    // Сохраняем новую версию
+    localStorage.setItem('appVersion', APP_VERSION);
+    
+    // Очищаем кеш браузера
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+        console.log('✅ [VERSION] Кеш браузера очищен');
+      });
+    }
+    
+    console.log('✅ [VERSION] Обновление завершено. Версия:', APP_VERSION);
+    
+    // Перезагружаем страницу для применения изменений
+    if (storedVersion) { // Перезагружаем только если была старая версия
+      console.log('🔄 [VERSION] Перезагрузка страницы...');
+      setTimeout(() => location.reload(true), 500);
+      return;
+    }
+  } else {
+    console.log('✅ [VERSION] Версия актуальна');
+  }
+})();
+
 // Глобальные переменные
 let currentUser = null;
 let products = [];
