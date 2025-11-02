@@ -123,6 +123,13 @@
             </ol>
         </div>
 
+        <div class="navigation">
+            <a href="/orders.html" class="nav-btn">📋 Мои заказы</a>
+            <div id="adminNavBtn" class="nav-btn" style="display: none;" onclick="window.location.href='/admin-panel.html'">
+                🔧 Админ-панель
+            </div>
+        </div>
+
         <div class="instructions">
             <h3>🔍 Что происходит после оплаты:</h3>
             <ul>
@@ -245,6 +252,35 @@
                 document.getElementById('status').innerHTML = `<div style="color: red;">❌ Ошибка обновления токена: ${error.message}</div>`;
             }
         }
+
+        // Проверка админских прав
+        async function checkAdminAccess() {
+            try {
+                const response = await fetch('/api/user/role', {
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.role === 'admin') {
+                        document.getElementById('adminNavBtn').style.display = 'block';
+                        console.log('🔧 Админ-панель доступна');
+                    }
+                }
+            } catch (error) {
+                console.log('Проверка админских прав не удалась:', error);
+            }
+        }
+
+        // Загружаем товары при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            loadProducts();
+            loadUserInfo();
+            checkAdminAccess();
+        });
 
         // Инициализируем PaymentManager
         document.addEventListener('DOMContentLoaded', () => {

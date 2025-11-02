@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔧 Админ-панель</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+        .btn {
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 5px;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .btn-danger {
+            background: linear-gradient(45deg, #ff4757, #ff3838);
+        }
+        .btn-success {
+            background: linear-gradient(45deg, #2ed573, #1e90ff);
+        }
+        .product-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 5px solid #4ECDC4;
+        }
+        .product-stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .stat {
+            background: rgba(255,255,255,0.2);
+            padding: 8px 15px;
+            border-radius: 10px;
+            font-size: 0.9em;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 16px;
+        }
+        .form-group input::placeholder, .form-group textarea::placeholder {
+            color: rgba(255,255,255,0.7);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 20px;
+            width: 80%;
+            max-width: 500px;
+            color: white;
+        }
+        .close {
+            color: white;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            opacity: 0.7;
+        }
+        .delete-confirmation {
+            text-align: center;
+            padding: 20px;
+        }
+        .delete-input {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .delete-input input {
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #ff4757;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            text-align: center;
+        }
+        .access-denied {
+            text-align: center;
+            padding: 50px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading">
+            <h1>🔄 Проверка прав доступа...</h1>
+        </div>
+        
+        <div id="accessDenied" class="access-denied hidden">
+            <h1>🚫 Доступ запрещен</h1>
+            <p>У вас нет прав администратора для доступа к этой панели.</p>
+            <p>Ваш Telegram ID: <span id="userTelegramId"></span></p>
+            <a href="/real-test.html" class="btn">🏠 Вернуться в магазин</a>
+        </div>
+        
+        <div id="adminPanel" class="hidden">
+            <h1>🔧 Админ-панель</h1>
+            <p>Добро пожаловать, администратор! Telegram ID: <span id="adminTelegramId"></span></p>
+            
+            <div style="margin: 20px 0;">
+                <button class="btn btn-success" onclick="showCreateProductModal()">➕ Создать товар</button>
+                <button class="btn" onclick="loadProducts()">🔄 Обновить список</button>
+                <a href="/real-test.html" class="btn">🏠 В магазин</a>
+                <a href="/orders.html" class="btn">📋 Заказы</a>
+            </div>
+            
+            <div id="productsContainer">
+                <h3>📦 Управление товарами</h3>
+                <div id="productsList">
+                    <p>Загрузка товаров...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания товара -->
+    <div id="createProductModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeCreateProductModal()">&times;</span>
+            <h2>➕ Создать новый товар</h2>
+            <form id="createProductForm">
+                <div class="form-group">
+                    <label for="productName">Название товара:</label>
+                    <input type="text" id="productName" placeholder="Введите название товара" required>
+                </div>
+                <div class="form-group">
+                    <label for="productDescription">Описание:</label>
+                    <textarea id="productDescription" rows="3" placeholder="Описание товара"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="productPrice">Цена (TON):</label>
+                    <input type="number" id="productPrice" step="0.01" min="0" placeholder="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="productCategory">Категория:</label>
+                    <input type="text" id="productCategory" placeholder="general" value="general">
+                </div>
+                <div style="text-align: center; margin-top: 20px;">
+                    <button type="submit" class="btn btn-success">✅ Создать товар</button>
+                    <button type="button" class="btn" onclick="closeCreateProductModal()">❌ Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно удаления товара -->
+    <div id="deleteProductModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeDeleteProductModal()">&times;</span>
+            <div class="delete-confirmation">
+                <h2>⚠️ Подтверждение удаления</h2>
+                <p>Вы действительно хотите удалить товар:</p>
+                <h3 id="deleteProductName"></h3>
+                <p><strong>Это действие нельзя отменить!</strong></p>
+                
+                <div class="delete-input">
+                    <p>Для подтверждения введите слово <strong>"удалить"</strong>:</p>
+                    <input type="text" id="deleteConfirmInput" placeholder="удалить">
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-danger" onclick="confirmDeleteProduct()">🗑️ Удалить товар</button>
+                    <button class="btn" onclick="closeDeleteProductModal()">❌ Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const testToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidGVsZWdyYW1faWQiOiIxMjM0NTY3ODkiLCJ1c2VybmFtZSI6InRlc3R1c2VyIiwicm9sZSI6InVzZXIiLCJpc19hZG1pbiI6MCwiaWF0IjoxNzYyMDU0NTAwLCJleHAiOjE3NjIxNDA5MDB9.J3_he9D_53acN15v8Q_CS-73FNMIVdb8AtX2iYajALU';
+        let currentDeleteProductId = null;
+
+        // Проверка прав доступа при загрузке
+        document.addEventListener('DOMContentLoaded', checkAdminAccess);
+
+        async function checkAdminAccess() {
+            try {
+                const response = await fetch('/api/user/role', {
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    document.getElementById('loading').classList.add('hidden');
+                    
+                    if (data.role === 'admin') {
+                        document.getElementById('adminPanel').classList.remove('hidden');
+                        document.getElementById('adminTelegramId').textContent = data.telegram_id;
+                        loadProducts();
+                    } else {
+                        document.getElementById('accessDenied').classList.remove('hidden');
+                        document.getElementById('userTelegramId').textContent = data.telegram_id;
+                    }
+                } else {
+                    throw new Error('Ошибка проверки прав доступа');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('accessDenied').classList.remove('hidden');
+                document.getElementById('userTelegramId').textContent = 'Неизвестно';
+            }
+        }
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('/api/admin/products', {
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayProducts(data.products);
+                } else {
+                    throw new Error('Ошибка загрузки товаров');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                document.getElementById('productsList').innerHTML = '<p>❌ Ошибка загрузки товаров</p>';
+            }
+        }
+
+        function displayProducts(products) {
+            const container = document.getElementById('productsList');
+            
+            if (products.length === 0) {
+                container.innerHTML = '<p>📦 Товары не найдены</p>';
+                return;
+            }
+
+            container.innerHTML = products.map(product => `
+                <div class="product-card">
+                    <h3>${product.name}</h3>
+                    <p>${product.description || 'Без описания'}</p>
+                    <p><strong>Цена:</strong> ${product.price} TON</p>
+                    <p><strong>Категория:</strong> ${product.category}</p>
+                    
+                    <div class="product-stats">
+                        <div class="stat">📊 Заказов: ${product.total_orders}</div>
+                        <div class="stat">✅ Оплачено: ${product.paid_orders}</div>
+                        <div class="stat">💰 Выручка: ${product.total_revenue || 0} TON</div>
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-danger" onclick="showDeleteProductModal(${product.id}, '${product.name}')">
+                            🗑️ Удалить
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showCreateProductModal() {
+            document.getElementById('createProductModal').style.display = 'block';
+        }
+
+        function closeCreateProductModal() {
+            document.getElementById('createProductModal').style.display = 'none';
+            document.getElementById('createProductForm').reset();
+        }
+
+        function showDeleteProductModal(productId, productName) {
+            currentDeleteProductId = productId;
+            document.getElementById('deleteProductName').textContent = productName;
+            document.getElementById('deleteConfirmInput').value = '';
+            document.getElementById('deleteProductModal').style.display = 'block';
+        }
+
+        function closeDeleteProductModal() {
+            document.getElementById('deleteProductModal').style.display = 'none';
+            currentDeleteProductId = null;
+        }
+
+        document.getElementById('createProductForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const productData = {
+                name: document.getElementById('productName').value,
+                description: document.getElementById('productDescription').value,
+                price: parseFloat(document.getElementById('productPrice').value),
+                category: document.getElementById('productCategory').value
+            };
+
+            try {
+                const response = await fetch('/api/admin/products', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${testToken}`
+                    },
+                    body: JSON.stringify(productData)
+                });
+
+                if (response.ok) {
+                    alert('✅ Товар успешно создан!');
+                    closeCreateProductModal();
+                    loadProducts();
+                } else {
+                    const error = await response.json();
+                    alert('❌ Ошибка: ' + error.error);
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('❌ Ошибка создания товара');
+            }
+        });
+
+        async function confirmDeleteProduct() {
+            const confirmText = document.getElementById('deleteConfirmInput').value.trim().toLowerCase();
+            
+            if (confirmText !== 'удалить') {
+                alert('❌ Для подтверждения введите "удалить"');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/products/${currentDeleteProductId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${testToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    alert('✅ Товар успешно удален!');
+                    closeDeleteProductModal();
+                    loadProducts();
+                } else {
+                    const error = await response.json();
+                    alert('❌ Ошибка: ' + error.error);
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('❌ Ошибка удаления товара');
+            }
+        }
+
+        // Закрытие модальных окон по клику вне них
+        window.onclick = function(event) {
+            const createModal = document.getElementById('createProductModal');
+            const deleteModal = document.getElementById('deleteProductModal');
+            
+            if (event.target === createModal) {
+                closeCreateProductModal();
+            }
+            if (event.target === deleteModal) {
+                closeDeleteProductModal();
+            }
+        }
+    </script>
+</body>
+</html>

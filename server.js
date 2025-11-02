@@ -62,6 +62,11 @@ app.get('/debug-payments.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'debug-payments.html'));
 });
 
+// Админ-панель
+app.get('/admin-panel.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin-panel.html'));
+});
+
 // Простой тест для создания заказа без JWT (только для отладки)
 app.post('/api/test-order', (req, res) => {
   try {
@@ -543,8 +548,6 @@ app.get('/api/admin/users', adminMiddleware, (req, res) => {
   } catch (error) {
     console.error('Error getting users:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
-  }
-});
 
 // Создание продукта
 app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, res) => {
@@ -1067,6 +1070,137 @@ app.get('/api/payments/crypto/pending', authMiddleware, (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка получения ожидающих инвойсов:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Проверка роли пользователя
+app.get('/api/user/role', authMiddleware, (req, res) => {
+  try {
+    // Проверяем админские права по Telegram ID
+    const adminIds = process.env.ADMIN_TELEGRAM_IDS ? process.env.ADMIN_TELEGRAM_IDS.split(',') : [];
+    const userTelegramId = req.user.telegram_id?.toString();
+    
+    let isAdmin = false;
+    
+    // Проверка по Telegram ID (приоритет)
+    if (adminIds.length > 0 && userTelegramId && adminIds.includes(userTelegramId)) {
+      isAdmin = true;
+    }
+    // Fallback: проверка по старому формату
+    else if (req.user.is_admin !== undefined) {
+      isAdmin = req.user.is_admin === 1 || req.user.is_admin === true;
+    } else if (req.user.role) {
+      isAdmin = req.user.role === 'admin';
+    }
+    
+    res.json({ 
+      role: isAdmin ? 'admin' : 'user',
+      telegram_id: userTelegramId,
+      is_admin: isAdmin
+    });
+  } catch (error) {
+    console.error('Ошибка проверки роли:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// ===== ADMIN API ENDPOINTS =====
+
+// Создание товара (только для админов)
+app.post('/api/admin/products', adminMiddleware, (req, res) => {
+  try {
+    const { name, description, price, category } = req.body;
+    
+    if (!name || !price) {
+      return res.status(400).json({ error: 'Название и цена обязательны' });
+    }
+    
+    const insertProduct = db.prepare(`
+      INSERT INTO products (name, description, price, category, created_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `);
+    
+    const result = insertProduct.run(name, description || '', parseFloat(price), category || 'general');
+    
+    res.json({ 
+      success: true, 
+      product: {
+        id: result.lastInsertRowid,
+        name,
+        description,
+        price: parseFloat(price),
+        category
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания товара:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Удаление товара (только для админов)
+app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    
+    // Проверяем, существует ли товар
+    const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    const product = getProduct.get(productId);
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Проверяем, есть ли активные заказы с этим товаром
+    const getActiveOrders = db.prepare(`
+      SELECT COUNT(*) as count FROM orders 
+      WHERE product_id = ? AND status IN ('pending', 'pending_crypto', 'paid')
+    `);
+    const activeOrders = getActiveOrders.get(productId);
+    
+    if (activeOrders.count > 0) {
+      return res.status(400).json({ 
+        error: 'Нельзя удалить товар с активными заказами',
+        active_orders: activeOrders.count
+      });
+    }
+    
+    // Удаляем товар
+    const deleteProduct = db.prepare('DELETE FROM products WHERE id = ?');
+    deleteProduct.run(productId);
+    
+    res.json({ 
+      success: true, 
+      message: 'Товар успешно удален',
+      deleted_product: product
+    });
+  } catch (error) {
+    console.error('Ошибка удаления товара:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Получение всех товаров для админа
+app.get('/api/admin/products', adminMiddleware, (req, res) => {
+  try {
+    const getProducts = db.prepare(`
+      SELECT 
+        p.*,
+        COUNT(o.id) as total_orders,
+        SUM(CASE WHEN o.status = 'paid' THEN 1 ELSE 0 END) as paid_orders,
+        SUM(CASE WHEN o.status = 'paid' THEN o.total_amount ELSE 0 END) as total_revenue
+      FROM products p
+      LEFT JOIN orders o ON p.id = o.product_id
+      GROUP BY p.id
+      ORDER BY p.created_at DESC
+    `);
+    
+    const products = getProducts.all();
+    
+    res.json({ success: true, products });
+  } catch (error) {
+    console.error('Ошибка получения товаров:', error);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
