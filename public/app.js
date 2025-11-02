@@ -303,16 +303,20 @@ function applyTranslations() {
 
 // Инициализация приложения
 document.addEventListener('DOMContentLoaded', function() {
-    // Даем время Telegram Web App для инициализации
-    setTimeout(() => {
-        initializeApp();
-        const langSelect = document.getElementById('langSelect');
-        if (langSelect) {
-            langSelect.value = currentLang;
-            langSelect.addEventListener('change', e => setLang(e.target.value));
-        }
-        applyTranslations();
-    }, 500); // Задержка 500ms для инициализации Telegram Web App
+    // Инициализируем Telegram Web App сразу если доступен
+    if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.ready();
+        window.Telegram.WebApp.expand();
+    }
+    
+    // Запускаем инициализацию приложения без задержки
+    initializeApp();
+    const langSelect = document.getElementById('langSelect');
+    if (langSelect) {
+        langSelect.value = currentLang;
+        langSelect.addEventListener('change', e => setLang(e.target.value));
+    }
+    applyTranslations();
 });
 
 // Инициализация приложения
@@ -665,6 +669,7 @@ async function authenticateUser(telegramId, username, firstName, lastName) {
         // Сохраняем токен и данные пользователя
         localStorage.setItem('authToken', data.token);
         currentUser = data.user;
+        localStorage.setItem('currentUser', JSON.stringify(data.user)); // Сохраняем для быстрого восстановления
         
         // Показываем основной контент
         showMainContent();
@@ -683,12 +688,24 @@ async function authenticateUser(telegramId, username, firstName, lastName) {
 // Восстановление сессии
 async function restoreSession(token) {
     try {
+        // Пытаемся получить данные пользователя из токена или localStorage
+        const savedUser = localStorage.getItem('currentUser');
+        if (savedUser) {
+            try {
+                currentUser = JSON.parse(savedUser);
+            } catch (e) {
+                console.error('Ошибка парсинга сохраненного пользователя:', e);
+            }
+        }
+        
         showMainContent();
+        showUserInfo(); // Показываем информацию о пользователе сразу
         await loadProducts();
         await loadOrders();
     } catch (error) {
         console.error('Ошибка восстановления сессии:', error);
         localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
         showAuthSection();
     }
 }
@@ -696,7 +713,10 @@ async function restoreSession(token) {
 // Обработка выхода
 function handleLogout() {
     localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
     currentUser = null;
+    products = [];
+    orders = [];
     showAuthSection();
 }
 
@@ -723,12 +743,24 @@ function showMainContent() {
 }
 
 // Загрузка товаров
-async function loadProducts() {
+async function loadProducts(forceReload = false) {
     try {
         showLoading();
         // Добавляем timestamp для предотвращения кеширования
         const timestamp = new Date().getTime();
-        const response = await fetch(`/api/products?_t=${timestamp}`);
+        const headers = {};
+        
+        // При принудительной перезагрузке отключаем кеш полностью
+        if (forceReload) {
+            headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+            headers['Pragma'] = 'no-cache';
+            headers['Expires'] = '0';
+        }
+        
+        const response = await fetch(`/api/products?_t=${timestamp}`, {
+            headers: headers,
+            cache: forceReload ? 'no-store' : 'default'
+        });
         
         if (!response.ok) {
             throw new Error('Ошибка загрузки товаров');
@@ -1283,7 +1315,7 @@ async function deleteProduct(productId) {
 
         showSuccess('Товар успешно удален!');
         
-        // Принудительно очищаем кеш и перезагружаем список товаров
+        // Принудительно очищаем кеш
         if ('caches' in window) {
             caches.keys().then(names => {
                 names.forEach(name => {
@@ -1292,8 +1324,17 @@ async function deleteProduct(productId) {
             });
         }
         
-        // Перезагружаем список товаров
-        await loadProducts();
+        // Удаляем товар из локального массива немедленно
+        const index = products.findIndex(p => p.id === productId);
+        if (index > -1) {
+            products.splice(index, 1);
+        }
+        
+        // Перерисовываем список товаров с текущими данными
+        filterProducts();
+        
+        // Перезагружаем список товаров с сервера с принудительным обновлением
+        await loadProducts(true);
 
     } catch (error) {
         console.error('Ошибка удаления товара:', error);

@@ -165,9 +165,20 @@ async function loadDashboardData() {
 }
 
 // Загрузка товаров
-async function loadProducts() {
+async function loadProducts(forceReload = false) {
     try {
-        const data = await makeAuthRequest('/api/products');
+        const timestamp = new Date().getTime();
+        const url = `/api/products?_t=${timestamp}`;
+        const options = forceReload ? {
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            },
+            cache: 'no-store'
+        } : {};
+        
+        const data = await makeAuthRequest(url, options);
         if (!data || !Array.isArray(data)) {
             console.error('Unexpected response format:', data);
             throw new Error('Неверный формат данных');
@@ -403,8 +414,8 @@ async function handleProductSubmit(e) {
         });
         closeProductModal();
         showSuccess(result.message || 'Операция выполнена успешно');
-        // Update data
-        await loadProducts();
+        // Update data with force reload
+        await loadProducts(true);
         await loadDashboardData();
     } catch (error) {
         console.error('Ошибка сохранения товара:', error);
@@ -422,8 +433,18 @@ async function deleteProduct(productId) {
             method: 'DELETE'
         });
         showSuccess(result.message || 'Товар успешно удален');
-        // Update data
-        await loadProducts();
+        
+        // Удаляем товар из локального массива немедленно
+        const index = products.findIndex(p => p.id === productId);
+        if (index > -1) {
+            products.splice(index, 1);
+        }
+        
+        // Перерисовываем таблицу с текущими данными
+        renderProductsTable(products);
+        
+        // Update data with force reload
+        await loadProducts(true);
         await loadDashboardData();
     } catch (error) {
         console.error('Ошибка удаления товара:', error);
