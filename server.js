@@ -32,8 +32,22 @@ const ADMIN_TELEGRAM_IDS = [
     // Можете добавить еще админов
 ];
 
-// Middleware
-app.use(cors());
+// Middleware для CORS
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
+
+// Middleware для отключения кеширования API запросов
+app.use('/api', (req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+});
+
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
@@ -400,6 +414,12 @@ app.post('/api/auth', (req, res) => {
 
 // Получение списка товаров
 app.get('/api/products', (req, res) => {
+  // Отключаем кеширование для актуальных данных
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
   try {
     // Получаем все активные товары
     const getProducts = db.prepare('SELECT * FROM products WHERE is_active = 1 ORDER BY created_at DESC');

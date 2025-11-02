@@ -505,24 +505,40 @@ async function autoAuth() {
     try {
         showLoading();
         
-        // Получаем данные пользователя из Telegram Web App
-        const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+        // Добавляем отладочную информацию
+        console.log('🔍 Отладка Telegram Web App:');
+        console.log('- window.Telegram:', window.Telegram);
+        console.log('- WebApp:', window.Telegram?.WebApp);
+        console.log('- initData:', window.Telegram?.WebApp?.initData);
+        console.log('- initDataUnsafe:', window.Telegram?.WebApp?.initDataUnsafe);
         
-        if (!telegramUser || !telegramUser.id) {
-            // Если нет данных Telegram, используем тестовые данные для разработки
-            console.log('⚠️ Данные Telegram не найдены, используем тестовый режим');
-            const testUser = {
-                id: 853232715, // Админский ID для тестирования
-                username: 'admin',
-                first_name: 'Admin',
-                last_name: 'User'
-            };
-            await authenticateUser(testUser.id, testUser.username, testUser.first_name, testUser.last_name);
-            return;
+        // Проверяем, запущено ли приложение в Telegram
+        const isInTelegram = window.Telegram?.WebApp?.initData;
+        
+        if (isInTelegram) {
+            // Получаем данные пользователя из Telegram Web App
+            const telegramUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+            
+            if (telegramUser && telegramUser.id) {
+                console.log('✅ Данные Telegram найдены:', telegramUser);
+                // Автоматически авторизуем реального пользователя Telegram
+                await authenticateUser(telegramUser.id, telegramUser.username, telegramUser.first_name, telegramUser.last_name);
+                return;
+            } else {
+                console.log('⚠️ Пользователь Telegram не найден в initDataUnsafe');
+            }
+        } else {
+            console.log('⚠️ Приложение не запущено в Telegram, используем тестовый режим');
         }
         
-        // Автоматически авторизуем пользователя
-        await authenticateUser(telegramUser.id, telegramUser.username, telegramUser.first_name, telegramUser.last_name);
+        // Если нет данных Telegram или не в Telegram, используем тестовые данные
+        const testUser = {
+            id: 853232715, // Админский ID для тестирования
+            username: 'admin',
+            first_name: 'Admin',
+            last_name: 'User'
+        };
+        await authenticateUser(testUser.id, testUser.username, testUser.first_name, testUser.last_name);
         
     } catch (error) {
         console.error('Ошибка автоматической авторизации:', error);
@@ -649,7 +665,9 @@ function showMainContent() {
 async function loadProducts() {
     try {
         showLoading();
-        const response = await fetch('/api/products');
+        // Добавляем timestamp для предотвращения кеширования
+        const timestamp = new Date().getTime();
+        const response = await fetch(`/api/products?_t=${timestamp}`);
         
         if (!response.ok) {
             throw new Error('Ошибка загрузки товаров');
@@ -1203,6 +1221,15 @@ async function deleteProduct(productId) {
         }
 
         showSuccess('Товар успешно удален!');
+        
+        // Принудительно очищаем кеш и перезагружаем список товаров
+        if ('caches' in window) {
+            caches.keys().then(names => {
+                names.forEach(name => {
+                    caches.delete(name);
+                });
+            });
+        }
         
         // Перезагружаем список товаров
         await loadProducts();
