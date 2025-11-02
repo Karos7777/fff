@@ -292,10 +292,13 @@ try {
 
 // Роут для авторизации через Telegram
 app.post('/api/auth/telegram', (req, res) => {
+    console.log('\n👤 [SERVER AUTH] Запрос авторизации через Telegram');
     try {
         const { id, first_name, last_name, username } = req.body;
+        console.log('👤 [SERVER AUTH] Данные пользователя:', { id, first_name, last_name, username });
         
         if (!id) {
+            console.error('❌ [SERVER AUTH] ID пользователя не предоставлен');
             return res.status(400).json({ error: 'ID пользователя не предоставлен' });
         }
         
@@ -414,6 +417,9 @@ app.post('/api/auth', (req, res) => {
 
 // Получение списка товаров
 app.get('/api/products', (req, res) => {
+  console.log('\n📦 [SERVER LOAD] Запрос на получение списка товаров');
+  console.log('📦 [SERVER LOAD] Query params:', req.query);
+  
   // Отключаем кеширование для актуальных данных
   res.set({
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -424,6 +430,7 @@ app.get('/api/products', (req, res) => {
     // Получаем все активные товары
     const getProducts = db.prepare('SELECT * FROM products WHERE is_active = 1 ORDER BY created_at DESC');
     const products = getProducts.all();
+    console.log('📦 [SERVER LOAD] Найдено товаров:', products.length);
     
     if (products.length === 0) {
       return res.json(products);
@@ -448,9 +455,11 @@ app.get('/api/products', (req, res) => {
       reviewsCount: ratingMap[p.id]?.reviews_count || 0
     }));
     
+    console.log('✅ [SERVER LOAD] Отправка списка товаров:', result.length, 'шт.');
+    console.log('📦 [SERVER LOAD] Первые 3 ID:', result.slice(0, 3).map(p => p.id));
     res.json(result);
   } catch (error) {
-    console.error('Error getting products:', error);
+    console.error('❌ [SERVER LOAD] Ошибка получения товаров:', error);
     res.status(500).json({ error: 'Ошибка получения товаров' });
   }
 });
@@ -1243,14 +1252,19 @@ app.post('/api/admin/products', adminMiddleware, (req, res) => {
 
 // Удаление товара (только для админов)
 app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
+  console.log('\n🗑️ [SERVER DELETE] ========== НАЧАЛО УДАЛЕНИЯ ТОВАРА ==========');
   try {
     const productId = parseInt(req.params.id);
+    console.log('🗑️ [SERVER DELETE] Product ID:', productId);
+    console.log('🗑️ [SERVER DELETE] User:', req.user);
     
     // Проверяем, существует ли товар
     const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
     const product = getProduct.get(productId);
+    console.log('🗑️ [SERVER DELETE] Найден товар:', product);
     
     if (!product) {
+      console.error('❌ [SERVER DELETE] Товар не найден в БД');
       return res.status(404).json({ error: 'Товар не найден' });
     }
     
@@ -1260,26 +1274,46 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
       WHERE product_id = ? AND status IN ('pending', 'pending_crypto', 'paid')
     `);
     const activeOrders = getActiveOrders.get(productId);
+    console.log('🗑️ [SERVER DELETE] Активных заказов:', activeOrders.count);
     
     // Удаляем связанные данные в правильном порядке (включая активные заказы)
     const deleteOrders = db.prepare('DELETE FROM orders WHERE product_id = ?');
     const deleteProduct = db.prepare('DELETE FROM products WHERE id = ?');
+    
+    console.log('🗑️ [SERVER DELETE] Начало транзакции удаления...');
     
     // Выполняем удаление в транзакции
     const deleteTransaction = db.transaction(() => {
       // Удаляем отзывы если таблица существует
       try {
         const deleteReviews = db.prepare('DELETE FROM reviews WHERE product_id = ?');
-        deleteReviews.run(productId);
+        const reviewsResult = deleteReviews.run(productId);
+        console.log('🗑️ [SERVER DELETE] Удалено отзывов:', reviewsResult.changes);
       } catch (e) {
-        console.log('Таблица reviews не существует, пропускаем');
+        console.log('⚠️ [SERVER DELETE] Таблица reviews не существует, пропускаем');
       }
       
-      deleteOrders.run(productId);
-      deleteProduct.run(productId);
+      const ordersResult = deleteOrders.run(productId);
+      console.log('🗑️ [SERVER DELETE] Удалено заказов:', ordersResult.changes);
+      
+      const productResult = deleteProduct.run(productId);
+      console.log('🗑️ [SERVER DELETE] Удалено товаров:', productResult.changes);
     });
     
     deleteTransaction();
+    console.log('✅ [SERVER DELETE] Транзакция успешно завершена');
+    
+    // Проверяем, что товар действительно удален
+    const verifyDelete = db.prepare('SELECT * FROM products WHERE id = ?');
+    const stillExists = verifyDelete.get(productId);
+    
+    if (stillExists) {
+      console.error('❌ [SERVER DELETE] ОШИБКА: Товар все еще существует в БД!');
+      return res.status(500).json({ error: 'Ошибка удаления товара' });
+    }
+    
+    console.log('✅ [SERVER DELETE] Товар успешно удален из БД');
+    console.log('🗑️ [SERVER DELETE] ========== КОНЕЦ УДАЛЕНИЯ ТОВАРА ==========\n');
     
     res.json({ 
       success: true, 
@@ -1287,8 +1321,10 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
       deleted_product: product
     });
   } catch (error) {
-    console.error('Ошибка удаления товара:', error);
-    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    console.error('❌ [SERVER DELETE] КРИТИЧЕСКАЯ ОШИБКА:', error);
+    console.error('❌ [SERVER DELETE] Stack trace:', error.stack);
+    console.log('🗑️ [SERVER DELETE] ========== КОНЕЦ УДАЛЕНИЯ ТОВАРА (ОШИБКА) ==========\n');
+    res.status(500).json({ error: 'Внутренняя ошибка сервера', details: error.message });
   }
 });
 

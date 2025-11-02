@@ -509,15 +509,16 @@ function setupModalListeners() {
 
 // Автоматическая авторизация при загрузке
 async function autoAuth() {
+    console.log('🔐 [AUTH] ========== НАЧАЛО АВТОМАТИЧЕСКОЙ АВТОРИЗАЦИИ ==========');
     try {
         showLoading();
         
         // Добавляем отладочную информацию
-        console.log('🔍 Отладка Telegram Web App:');
-        console.log('- window.Telegram:', window.Telegram);
-        console.log('- WebApp:', window.Telegram?.WebApp);
-        console.log('- initData:', window.Telegram?.WebApp?.initData);
-        console.log('- initDataUnsafe:', window.Telegram?.WebApp?.initDataUnsafe);
+        console.log('🔍 [AUTH] Отладка Telegram Web App:');
+        console.log('🔍 [AUTH] - window.Telegram:', window.Telegram);
+        console.log('🔍 [AUTH] - WebApp:', window.Telegram?.WebApp);
+        console.log('🔍 [AUTH] - initData:', window.Telegram?.WebApp?.initData);
+        console.log('🔍 [AUTH] - initDataUnsafe:', window.Telegram?.WebApp?.initDataUnsafe);
         
         // Инициализируем Telegram Web App если доступен
         if (window.Telegram?.WebApp) {
@@ -589,11 +590,12 @@ async function autoAuth() {
         }
         
         if (telegramUser && telegramUser.id) {
-            console.log('✅ Авторизуем пользователя Telegram:', telegramUser);
+            console.log('✅ [AUTH] Авторизуем пользователя Telegram:', telegramUser);
             await authenticateUser(telegramUser.id, telegramUser.username, telegramUser.first_name, telegramUser.last_name);
+            console.log('✅ [AUTH] Авторизация через Telegram завершена успешно');
             return;
         } else {
-            console.log('⚠️ Данные пользователя Telegram не найдены, используем тестовый режим');
+            console.log('⚠️ [AUTH] Данные пользователя Telegram не найдены, используем тестовый режим');
         }
         
         // Если нет данных Telegram или не в Telegram, используем тестовые данные
@@ -603,14 +605,18 @@ async function autoAuth() {
             first_name: 'Admin',
             last_name: 'User'
         };
+        console.log('🔐 [AUTH] Используем тестового пользователя:', testUser);
         await authenticateUser(testUser.id, testUser.username, testUser.first_name, testUser.last_name);
+        console.log('✅ [AUTH] Авторизация тестового пользователя завершена');
         
     } catch (error) {
-        console.error('Ошибка автоматической авторизации:', error);
+        console.error('❌ [AUTH] КРИТИЧЕСКАЯ ОШИБКА автоматической авторизации:', error);
+        console.error('❌ [AUTH] Stack trace:', error.stack);
         // В случае ошибки показываем форму авторизации
         showAuthSection();
     } finally {
         hideLoading();
+        console.log('🔐 [AUTH] ========== КОНЕЦ АВТОМАТИЧЕСКОЙ АВТОРИЗАЦИИ ==========');
     }
 }
 
@@ -642,6 +648,8 @@ async function handleAuth() {
 
 // Авторизация пользователя
 async function authenticateUser(telegramId, username, firstName, lastName) {
+    console.log('👤 [AUTH] Начало аутентификации пользователя');
+    console.log('👤 [AUTH] Параметры:', { telegramId, username, firstName, lastName });
     try {
         const authData = {
             telegram_id: telegramId.toString(),
@@ -650,7 +658,7 @@ async function authenticateUser(telegramId, username, firstName, lastName) {
             last_name: lastName || ''
         };
         
-        console.log('Отправка на /api/auth:', authData);
+        console.log('👤 [AUTH] Отправка на /api/auth:', authData);
         
         const response = await fetch('/api/auth', {
             method: 'POST',
@@ -660,27 +668,38 @@ async function authenticateUser(telegramId, username, firstName, lastName) {
             body: JSON.stringify(authData)
         });
 
+        console.log('👤 [AUTH] Ответ сервера - Статус:', response.status, response.statusText);
+
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ [AUTH] Ошибка авторизации:', errorText);
             throw new Error('Ошибка авторизации');
         }
 
         const data = await response.json();
+        console.log('👤 [AUTH] Данные от сервера:', data);
         
         // Сохраняем токен и данные пользователя
+        console.log('👤 [AUTH] Сохранение токена и данных пользователя...');
         localStorage.setItem('authToken', data.token);
         currentUser = data.user;
-        localStorage.setItem('currentUser', JSON.stringify(data.user)); // Сохраняем для быстрого восстановления
+        localStorage.setItem('currentUser', JSON.stringify(data.user));
+        console.log('✅ [AUTH] Данные сохранены. Текущий пользователь:', currentUser);
         
         // Показываем основной контент
+        console.log('👤 [AUTH] Отображение основного контента...');
         showMainContent();
         showUserInfo();
         
         // Загружаем данные
+        console.log('👤 [AUTH] Загрузка товаров и заказов...');
         await loadProducts();
         await loadOrders();
+        console.log('✅ [AUTH] Аутентификация завершена успешно!');
         
     } catch (error) {
-        console.error('Ошибка авторизации:', error);
+        console.error('❌ [AUTH] Ошибка аутентификации:', error);
+        console.error('❌ [AUTH] Stack trace:', error.stack);
         throw error;
     }
 }
@@ -744,6 +763,7 @@ function showMainContent() {
 
 // Загрузка товаров
 async function loadProducts(forceReload = false) {
+    console.log('📦 [LOAD] Начало загрузки товаров, forceReload:', forceReload);
     try {
         showLoading();
         // Добавляем timestamp для предотвращения кеширования
@@ -755,18 +775,30 @@ async function loadProducts(forceReload = false) {
             headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
             headers['Pragma'] = 'no-cache';
             headers['Expires'] = '0';
+            console.log('📦 [LOAD] Принудительная перезагрузка - кеш отключен');
         }
         
-        const response = await fetch(`/api/products?_t=${timestamp}`, {
+        const url = `/api/products?_t=${timestamp}`;
+        console.log('📦 [LOAD] URL запроса:', url);
+        console.log('📦 [LOAD] Заголовки запроса:', headers);
+        
+        const response = await fetch(url, {
             headers: headers,
             cache: forceReload ? 'no-store' : 'default'
         });
         
+        console.log('📦 [LOAD] Ответ сервера - Статус:', response.status, response.statusText);
+        console.log('📦 [LOAD] Заголовки ответа:', Object.fromEntries(response.headers.entries()));
+        
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ [LOAD] Ошибка загрузки:', errorText);
             throw new Error('Ошибка загрузки товаров');
         }
         
         products = await response.json();
+        console.log('✅ [LOAD] Загружено товаров:', products.length);
+        console.log('📦 [LOAD] Первые 3 товара:', products.slice(0, 3));
         
         // Добавляем дополнительные поля для демонстрации (если их нет в БД)
         products = products.map(product => ({
@@ -1284,10 +1316,16 @@ async function loadOrders() {
 
 // Функция удаления товара (только для админов)
 async function deleteProduct(productId) {
+    console.log('🗑️ [DELETE] Начало удаления товара, ID:', productId);
+    console.log('🗑️ [DELETE] Текущий список товаров:', products.length, 'шт.');
+    
     try {
         // Находим товар для подтверждения
         const product = products.find(p => p.id === productId);
+        console.log('🗑️ [DELETE] Найден товар:', product);
+        
         if (!product) {
+            console.error('❌ [DELETE] Товар не найден в локальном массиве');
             showError('Товар не найден');
             return;
         }
@@ -1295,12 +1333,16 @@ async function deleteProduct(productId) {
         // Подтверждение удаления
         const confirmText = prompt(`Для подтверждения удаления товара "${product.name}" введите слово "удалить":`);
         if (!confirmText || confirmText.toLowerCase().trim() !== 'удалить') {
+            console.log('🗑️ [DELETE] Удаление отменено пользователем');
             return; // Отмена
         }
 
         showLoading();
 
         const token = localStorage.getItem('authToken');
+        console.log('🗑️ [DELETE] Токен авторизации:', token ? 'Есть' : 'Отсутствует');
+        console.log('🗑️ [DELETE] Отправка DELETE запроса на:', `/api/admin/products/${productId}`);
+        
         const response = await fetch(`/api/admin/products/${productId}`, {
             method: 'DELETE',
             headers: {
@@ -1308,36 +1350,58 @@ async function deleteProduct(productId) {
             }
         });
 
+        console.log('🗑️ [DELETE] Ответ сервера - Статус:', response.status, response.statusText);
+        console.log('🗑️ [DELETE] Заголовки ответа:', Object.fromEntries(response.headers.entries()));
+
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Ошибка удаления товара');
+            let errorText = '';
+            try {
+                const error = await response.json();
+                errorText = error.error || 'Ошибка удаления товара';
+                console.error('❌ [DELETE] Ошибка от сервера:', error);
+            } catch (e) {
+                errorText = await response.text();
+                console.error('❌ [DELETE] Текст ошибки:', errorText);
+            }
+            throw new Error(errorText);
         }
 
+        const result = await response.json();
+        console.log('✅ [DELETE] Успешный ответ от сервера:', result);
+        
         showSuccess('Товар успешно удален!');
         
         // Принудительно очищаем кеш
+        console.log('🗑️ [DELETE] Очистка кеша браузера...');
         if ('caches' in window) {
-            caches.keys().then(names => {
-                names.forEach(name => {
-                    caches.delete(name);
-                });
-            });
+            const cacheNames = await caches.keys();
+            console.log('🗑️ [DELETE] Найдено кешей:', cacheNames.length);
+            for (const name of cacheNames) {
+                await caches.delete(name);
+                console.log('🗑️ [DELETE] Удален кеш:', name);
+            }
         }
         
         // Удаляем товар из локального массива немедленно
         const index = products.findIndex(p => p.id === productId);
+        console.log('🗑️ [DELETE] Индекс товара в массиве:', index);
         if (index > -1) {
             products.splice(index, 1);
+            console.log('✅ [DELETE] Товар удален из локального массива. Осталось:', products.length, 'шт.');
         }
         
         // Перерисовываем список товаров с текущими данными
+        console.log('🗑️ [DELETE] Перерисовка UI...');
         filterProducts();
         
         // Перезагружаем список товаров с сервера с принудительным обновлением
+        console.log('🗑️ [DELETE] Перезагрузка списка товаров с сервера...');
         await loadProducts(true);
+        console.log('✅ [DELETE] Удаление завершено успешно!');
 
     } catch (error) {
-        console.error('Ошибка удаления товара:', error);
+        console.error('❌ [DELETE] КРИТИЧЕСКАЯ ОШИБКА:', error);
+        console.error('❌ [DELETE] Stack trace:', error.stack);
         showError(error.message || 'Ошибка удаления товара');
     } finally {
         hideLoading();
