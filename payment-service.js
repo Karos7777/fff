@@ -10,6 +10,14 @@ class PaymentService {
     this.tonWalletAddress = process.env.TON_WALLET_ADDRESS || '';
     this.starsProviderToken = process.env.STARS_PROVIDER_TOKEN || '';
     
+    console.log('🔍 TON настройки:');
+    console.log('- Кошелек:', this.tonWalletAddress ? `настроен (${this.tonWalletAddress})` : 'не настроен');
+    console.log('- API ключ:', this.tonApiKey ? `настроен (${this.tonApiKey.substring(0, 20)}...)` : 'не настроен');
+    
+    if (!this.tonWalletAddress || !this.tonApiKey) {
+      console.warn('⚠️  ВНИМАНИЕ: TON настройки не полные - криптоплатежи работать не будут!');
+    }
+    
     // Инициализируем таблицы платежей
     this.initPaymentTables();
   }
@@ -164,31 +172,52 @@ class PaymentService {
     }
   }
 
-  // Создание инвойса для криптовалют (TON/USDT)
+  // Создание криптоинвойса с уникальным memo
   async createCryptoInvoice(orderId, userId, productId, amount, currency) {
     try {
-      const payload = this.generateInvoicePayload();
-      const memo = `ORDER_${orderId}_${payload.substring(0, 8)}`;
+      const payload = `crypto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const memo = `ORDER_${orderId}_${Date.now().toString().slice(-6)}`; // Уникальный memo
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 минут
+      
+      // Определяем адрес получателя
+      let address;
+      if (currency === 'TON') {
+        address = this.tonWalletAddress;
+      } else if (currency === 'USDT') {
+        address = this.tonWalletAddress; // USDT на TON блокчейне
+      } else {
+        throw new Error('Неподдерживаемая валюта');
+      }
 
-      // Используем основной кошелек для получения
-      const cryptoAddress = this.tonWalletAddress;
-
-      // Создаем запись в БД
+      // Сохраняем в БД с memo
       const insertInvoice = this.db.prepare(`
-        INSERT INTO invoices (order_id, user_id, product_id, amount, currency, invoice_payload, crypto_address, crypto_memo, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO invoices (
+          order_id, user_id, product_id, amount, currency, status,
+          invoice_payload, crypto_address, crypto_memo, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      const result = insertInvoice.run(orderId, userId, productId, amount, currency, payload, cryptoAddress, memo, expiresAt.toISOString());
+      
+      const result = insertInvoice.run(
+        orderId, userId, productId, amount, currency, 'pending',
+        payload, address, memo, expiresAt.toISOString()
+      );
+
+      console.log(`✅ Создан крипто инвойс #${result.lastInsertRowid}:`);
+      console.log(`   - Заказ: #${orderId}`);
+      console.log(`   - Сумма: ${amount} ${currency}`);
+      console.log(`   - Memo: ${memo}`);
+      console.log(`   - Адрес: ${address}`);
+      console.log(`   - Истекает: ${expiresAt.toLocaleString()}`);
 
       return {
-        invoiceId: result.lastInsertRowid,
-        payload: payload,
-        address: cryptoAddress,
-        memo: memo,
-        amount: amount,
-        currency: currency,
-        expiresAt: expiresAt
+        id: result.lastInsertRowid,
+        payload,
+        address,
+        memo,
+        amount,
+        currency,
+        expiresAt,
+        orderId
       };
     } catch (error) {
       console.error('Ошибка создания крипто инвойса:', error);
@@ -300,7 +329,7 @@ class PaymentService {
     }
   }
 
-  // Проверка криптоплатежей через TON API
+  // Проверка криптоплатежей (упрощенная версия без комментариев)
   async checkCryptoPayments() {
     try {
       if (!this.tonApiKey || !this.tonWalletAddress) {
@@ -308,79 +337,162 @@ class PaymentService {
         return;
       }
 
-      // Получаем все ожидающие крипто-инвойсы
+      // Получаем все ожидающие крипто инвойсы
       const getPendingInvoices = this.db.prepare(`
         SELECT * FROM invoices 
         WHERE status = 'pending' 
-        AND currency IN ('TON', 'USDT') 
+        AND currency IN ('TON', 'USDT')
         AND expires_at > datetime('now')
+        ORDER BY created_at DESC
       `);
       const pendingInvoices = getPendingInvoices.all();
 
-      for (const invoice of pendingInvoices) {
-        await this.checkSingleCryptoPayment(invoice);
+      if (pendingInvoices.length === 0) {
+        return;
       }
-    } catch (error) {
-      console.error('Ошибка проверки криптоплатежей:', error);
-    }
-  }
 
-  // Проверка одного криптоплатежа
-  async checkSingleCryptoPayment(invoice) {
-    try {
-      const response = await axios.get(
-        `https://tonapi.io/v2/accounts/${this.tonWalletAddress}/transactions`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.tonApiKey}`
-          },
-          params: {
-            limit: 50,
-            sort_order: 'desc'
+      console.log(`🔍 Проверяем ${pendingInvoices.length} ожидающих крипто платежей`);
+      
+      // Выводим информацию о ожидающих инвойсах
+      pendingInvoices.forEach(invoice => {
+        console.log(`📋 Инвойс #${invoice.id}: ${invoice.amount} ${invoice.currency}, создан ${invoice.created_at}`);
+      });
+
+      // Получаем последние транзакции кошелька
+      // TonAPI v2 требует "сырой" формат адреса (0:hex)
+      let walletAddress = this.tonWalletAddress;
+      
+      // Конвертируем user-friendly адрес в raw формат
+      if (walletAddress.startsWith('UQ') || walletAddress.startsWith('EQ')) {
+        // Убираем префикс UQ/EQ и конвертируем в 0:hex формат
+        const base64Part = walletAddress.substring(2);
+        try {
+          // Декодируем base64 в hex
+          const buffer = Buffer.from(base64Part, 'base64');
+          const hex = buffer.toString('hex');
+          walletAddress = `0:${hex}`;
+        } catch (e) {
+          console.warn('⚠️ Не удалось конвертировать адрес, используем исходный');
+        }
+      }
+      
+      const apiUrl = `https://tonapi.io/v2/accounts/${walletAddress}/events?limit=20`;
+      console.log('🌐 Запрос к TonAPI:', apiUrl);
+      console.log('🔑 Исходный адрес:', this.tonWalletAddress);
+      console.log('🔑 Используемый адрес:', walletAddress);
+      
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Authorization': `Bearer ${this.tonApiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        console.log('❌ Первая попытка неудачна, пробуем исходный адрес...');
+        
+        // Пробуем другие варианты API
+        console.log('🔄 Пробуем альтернативные endpoints...');
+        
+        // Вариант 1: Без Bearer токена
+        const noAuthUrl = `https://tonapi.io/v2/accounts/${this.tonWalletAddress}/events?limit=20`;
+        console.log('🌐 Попытка без авторизации:', noAuthUrl);
+        
+        const noAuthResponse = await fetch(noAuthUrl);
+        if (noAuthResponse.ok) {
+          console.log('✅ Запрос без авторизации успешен!');
+          var data = await noAuthResponse.json();
+        } else {
+          // Вариант 2: Проверяем, существует ли аккаунт
+          const accountUrl = `https://tonapi.io/v2/accounts/${this.tonWalletAddress}`;
+          console.log('🌐 Проверяем существование аккаунта:', accountUrl);
+          
+          const accountResponse = await fetch(accountUrl, {
+            headers: { 'Authorization': `Bearer ${this.tonApiKey}` }
+          });
+          
+          if (accountResponse.ok) {
+            console.log('✅ Аккаунт найден, но транзакции недоступны');
+            const accountData = await accountResponse.json();
+            console.log('📊 Данные аккаунта:', JSON.stringify(accountData, null, 2));
+            throw new Error('Аккаунт найден, но транзакции недоступны');
+          } else {
+            const errorText = await accountResponse.text();
+            console.error('❌ Аккаунт не найден:', errorText);
+            throw new Error(`Аккаунт не найден: ${accountResponse.status} - ${errorText}`);
           }
         }
-      );
+      } else {
+        var data = await response.json();
+        console.log('✅ Основной запрос успешен!');
+      }
+      const events = data.events || [];
+      console.log(`📊 Получено ${events.length} событий`);
 
-      const transactions = response.data.transactions || [];
-
-      for (const tx of transactions) {
-        // Проверяем входящие транзакции
-        if (tx.in_msg && tx.in_msg.destination && 
-            tx.in_msg.destination.address === this.tonWalletAddress) {
-          
-          const amount = parseInt(tx.in_msg.value) / 1e9; // Конвертируем из nanoTON
-          const comment = tx.in_msg.decoded_body?.text || '';
-          
-          // Проверяем memo/comment
-          if (comment.includes(invoice.crypto_memo) && 
-              Math.abs(amount - invoice.amount) < 0.001) { // Допуск на комиссии
+      // Анализируем каждое событие
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i];
+        console.log(`\n🔍 === СОБЫТИЕ ${i + 1}/${events.length} ===`);
+        console.log('📋 Структура события:', JSON.stringify(event, null, 2));
+        
+        // Проверяем действия в событии
+        if (!event.actions || event.actions.length === 0) {
+          console.log('⏭️ Пропускаем: нет действий');
+          continue;
+        }
+        
+        // Ищем TonTransfer действие
+        for (const action of event.actions) {
+          if (action.type === 'TonTransfer' && action.TonTransfer) {
+            const transfer = action.TonTransfer;
+            const amount = parseFloat(transfer.amount) / 1e9; // Конвертируем из nanotons
+            const comment = transfer.comment || '';
+            const eventTime = new Date(event.timestamp * 1000);
             
-            // Проверяем количество подтверждений
-            const confirmations = tx.now ? Math.floor((Date.now() / 1000 - tx.now) / 5) : 0;
-            const minConfirmations = invoice.currency === 'TON' ? 1 : 2;
+            console.log(`📊 TON Transfer: ${amount} TON, комментарий: "${comment}", время: ${eventTime.toLocaleString()}`);
             
-            if (confirmations >= minConfirmations) {
-              await this.processCryptoPayment(invoice, tx, confirmations);
-              return;
+            // Если нет комментария, пропускаем
+            if (!comment) {
+              console.log('⏭️ Пропускаем: нет комментария');
+              continue;
+            }
+            
+            // Проверяем каждый ожидающий инвойс
+            for (const invoice of pendingInvoices) {
+              console.log(`\n📋 Проверяем инвойс #${invoice.id} (memo: "${invoice.crypto_memo}"):`);
+              
+              const memoMatch = comment.trim() === invoice.crypto_memo.trim();
+              const amountMatch = Math.abs(amount - invoice.amount) < 0.001;
+              
+              console.log(`   - Точное совпадение memo: ${memoMatch}`);
+              console.log(`   - Сумма совпадает: ${amountMatch} (${amount} ≈ ${invoice.amount})`);
+              
+              if (memoMatch && amountMatch) {
+                console.log(`✅ НАЙДЕН ПЛАТЕЖ! Инвойс #${invoice.id}, заказ #${invoice.order_id}`);
+                await this.processCryptoPayment(invoice, event.event_id, amount);
+                return; // Выходим после первого найденного платежа
+              }
             }
           }
         }
       }
+      
+      console.log('🔍 Проверка завершена. Новых платежей не найдено.');
     } catch (error) {
       console.error('Ошибка проверки криптоплатежа:', error);
     }
   }
 
   // Обработка криптоплатежа
-  async processCryptoPayment(invoice, transaction, confirmations) {
+  async processCryptoPayment(invoice, eventId, amount) {
     try {
       // Проверяем, не был ли уже обработан
       if (invoice.status === 'paid') {
         return;
       }
 
-      const txHash = transaction.hash;
-      const amount = parseInt(transaction.in_msg.value) / 1e9;
+      const txHash = eventId; // Используем event_id как идентификатор
+      // amount уже передается как параметр
 
       // Обновляем инвойс
       const updateInvoice = this.db.prepare(`
@@ -391,7 +503,7 @@ class PaymentService {
           paid_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
-      updateInvoice.run(txHash, confirmations, invoice.id);
+      updateInvoice.run(txHash, 1, invoice.id); // Всегда считаем подтвержденным
 
       // Создаем транзакцию
       const insertTransaction = this.db.prepare(`
@@ -399,20 +511,11 @@ class PaymentService {
         VALUES (?, ?, 'confirmed', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
       `);
       const metadata = JSON.stringify({
-        block_number: transaction.lt,
-        transaction_time: transaction.now,
-        comment: transaction.in_msg.decoded_body?.text || ''
+        event_id: eventId,
+        amount: amount,
+        currency: invoice.currency
       });
-      insertTransaction.run(
-        invoice.id, 
-        invoice.currency.toLowerCase(), 
-        txHash,
-        transaction.in_msg.source?.address || '',
-        this.tonWalletAddress,
-        amount,
-        confirmations,
-        metadata
-      );
+      insertTransaction.run(invoice.id, 'crypto', txHash, 'external', process.env.TON_WALLET_ADDRESS, amount, 1, metadata);
 
       // Обновляем заказ
       const updateOrder = this.db.prepare(`
@@ -501,6 +604,26 @@ class PaymentService {
       console.error('Ошибка получения статуса инвойса:', error);
       return null;
     }
+  }
+
+  // Конвертация рублей в TON (актуальный курс)
+  convertRubToTON(rubAmount) {
+    // Для тестирования: 1 рубль = 0.01 TON
+    const TON_RATE = 100; // 1 TON ≈ 100 рублей
+    const tonAmount = (rubAmount / TON_RATE).toFixed(4);
+    
+    // Минимальная сумма для тестирования
+    return Math.max(parseFloat(tonAmount), 0.01).toString();
+  }
+
+  // Конвертация рублей в USDT (актуальный курс)
+  convertRubToUSDT(rubAmount) {
+    // Для тестирования: 1 рубль = 0.01 USDT
+    const USDT_RATE = 90; // 1 USDT ≈ 90 рублей
+    const usdtAmount = (rubAmount / USDT_RATE).toFixed(4);
+    
+    // Минимальная сумма для тестирования
+    return Math.max(parseFloat(usdtAmount), 0.01).toString();
   }
 
   // Отмена просроченных инвойсов

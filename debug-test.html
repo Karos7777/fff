@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Отладка платежей</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        
+        /* Простые стили для модального окна */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 500px;
+            position: relative;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Отладка платежей</h1>
+        
+        <div class="status info">
+            <strong>Статус загрузки:</strong>
+            <div id="loadStatus">Проверяем компоненты...</div>
+        </div>
+        
+        <button class="btn" onclick="testModal()">Тест модального окна</button>
+        <button class="btn" onclick="testPaymentManager()">Тест PaymentManager</button>
+        <button class="btn" onclick="testOrder()">Тест создания заказа</button>
+        <button class="btn" onclick="forceCloseModal()">Закрыть все модальные окна</button>
+        <button class="btn" onclick="testPaymentOptions()">Тест опций оплаты</button>
+        
+        <div id="testResults"></div>
+    </div>
+
+    <!-- Простое модальное окно для теста -->
+    <div id="testModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeTestModal()">&times;</span>
+            <h2>Тестовое модальное окно</h2>
+            <p>Если вы видите это окно, значит модальные окна работают!</p>
+            <button class="btn" onclick="closeTestModal()">Закрыть</button>
+        </div>
+    </div>
+
+    <script>
+        const testToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidGVsZWdyYW1faWQiOiIxMjM0NTY3ODkiLCJ1c2VybmFtZSI6InRlc3R1c2VyIiwicm9sZSI6InVzZXIiLCJpc19hZG1pbiI6MCwiaWF0IjoxNzYyMDUyNTQ3LCJleHAiOjE3NjIxMzg5NDd9.85OUzR36U5pSat6JOZ39LTwxEYR8ZNlCowQ63lJr0Xs';
+        localStorage.setItem('token', testToken);
+
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('loadStatus');
+            statusDiv.innerHTML = message;
+            statusDiv.className = type;
+        }
+
+        function testModal() {
+            console.log('🔍 Тестируем простое модальное окно');
+            document.getElementById('testModal').style.display = 'block';
+        }
+
+        function closeTestModal() {
+            document.getElementById('testModal').style.display = 'none';
+        }
+
+        function testPaymentManager() {
+            const resultsDiv = document.getElementById('testResults');
+            resultsDiv.innerHTML = '<div class="status info">Проверяем PaymentManager...</div>';
+            
+            console.log('🔍 Проверка PaymentManager');
+            console.log('window.PaymentManager:', window.PaymentManager);
+            console.log('window.paymentManager:', window.paymentManager);
+            
+            if (window.paymentManager) {
+                resultsDiv.innerHTML = '<div class="status success">✅ PaymentManager найден!</div>';
+                
+                // Тестируем создание простого модального окна
+                try {
+                    window.paymentManager.showModal('<h3>Тест PaymentManager</h3><p>Модальное окно работает!</p>');
+                    resultsDiv.innerHTML += '<div class="status success">✅ Модальное окно PaymentManager работает!</div>';
+                } catch (error) {
+                    resultsDiv.innerHTML += `<div class="status error">❌ Ошибка модального окна: ${error.message}</div>`;
+                    console.error('Ошибка модального окна:', error);
+                }
+            } else {
+                resultsDiv.innerHTML = '<div class="status error">❌ PaymentManager не найден!</div>';
+            }
+        }
+
+        async function testOrder() {
+            const resultsDiv = document.getElementById('testResults');
+            resultsDiv.innerHTML = '<div class="status info">Тестируем создание заказа...</div>';
+            
+            try {
+                const response = await fetch('/api/orders', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${testToken}`
+                    },
+                    body: JSON.stringify({
+                        product_id: 14
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultsDiv.innerHTML = `<div class="status success">✅ Заказ создан! ID: ${data.id}</div>`;
+                } else {
+                    resultsDiv.innerHTML = `<div class="status error">❌ Ошибка: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="status error">❌ Ошибка сети: ${error.message}</div>`;
+                console.error('Ошибка заказа:', error);
+            }
+        }
+
+        // Проверяем загрузку компонентов
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStatus('DOM загружен');
+            
+            // Проверяем через секунду
+            setTimeout(() => {
+                let status = [];
+                
+                if (window.PaymentManager) {
+                    status.push('✅ PaymentManager класс найден');
+                } else {
+                    status.push('❌ PaymentManager класс не найден');
+                }
+                
+                if (window.paymentManager) {
+                    status.push('✅ paymentManager экземпляр найден');
+                } else {
+                    status.push('❌ paymentManager экземпляр не найден');
+                }
+                
+                updateStatus(status.join('<br>'));
+            }, 1000);
+        });
+
+        function forceCloseModal() {
+            console.log('🔧 Принудительное закрытие всех модальных окон');
+            
+            // Закрываем тестовое модальное окно
+            const testModal = document.getElementById('testModal');
+            if (testModal) {
+                testModal.style.display = 'none';
+            }
+            
+            // Закрываем модальное окно PaymentManager
+            if (window.paymentManager) {
+                window.paymentManager.closeModal();
+            }
+            
+            // Восстанавливаем прокрутку
+            document.body.style.overflow = 'auto';
+            
+            // Ищем все модальные окна и закрываем их
+            const allModals = document.querySelectorAll('.modal, #paymentModal');
+            allModals.forEach(modal => {
+                modal.style.display = 'none';
+            });
+            
+            console.log('✅ Все модальные окна закрыты');
+        }
+
+        function testPaymentOptions() {
+            console.log('🔍 Тестируем showPaymentOptions');
+            
+            if (window.paymentManager) {
+                try {
+                    window.paymentManager.showPaymentOptions(
+                        123, // orderId
+                        14,  // productId
+                        'Тестовый товар',
+                        100  // price
+                    );
+                    console.log('✅ showPaymentOptions вызван успешно');
+                    
+                    // Дополнительная проверка через 500ms
+                    setTimeout(() => {
+                        const modal = document.getElementById('paymentModal');
+                        if (modal) {
+                            console.log('🔍 Финальная проверка модального окна:');
+                            console.log('- style.display:', modal.style.display);
+                            console.log('- classList:', modal.classList.toString());
+                            console.log('- offsetHeight:', modal.offsetHeight);
+                            console.log('- offsetWidth:', modal.offsetWidth);
+                            
+                            // Если все еще не видно - принудительно показываем
+                            if (modal.offsetHeight === 0) {
+                                console.log('🔧 Принудительное исправление видимости');
+                                modal.style.cssText = 'display: block !important; position: fixed !important; z-index: 99999 !important; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8);';
+                            }
+                        }
+                    }, 500);
+                } catch (error) {
+                    console.error('❌ Ошибка в showPaymentOptions:', error);
+                }
+            } else {
+                console.error('❌ PaymentManager не найден');
+            }
+        }
+
+        // Закрытие модального окна по клику вне его
+        window.onclick = function(event) {
+            const modal = document.getElementById('testModal');
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+    </script>
+
+    <!-- Загружаем PaymentManager -->
+    <script src="payment.js"></script>
+</body>
+</html>

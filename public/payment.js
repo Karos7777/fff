@@ -264,8 +264,11 @@ class PaymentManager {
     try {
       this.showLoading('Создание криптосчета...');
       
-      // Конвертируем цену в криптовалюту (упрощенно, в реальности нужен курс)
-      const cryptoAmount = currency === 'TON' ? (price / 100).toFixed(2) : (price / 90).toFixed(2);
+      // Конвертируем цену в криптовалюту для тестирования
+      // 1 рубль = 0.01 TON или 0.01 USDT (минимальные суммы для теста)
+      const cryptoAmount = currency === 'TON' ? 
+        Math.max(price / 100, 0.01).toFixed(4) : 
+        Math.max(price / 90, 0.01).toFixed(4);
       
       const response = await fetch('/api/payments/crypto/create-invoice', {
         method: 'POST',
@@ -340,10 +343,14 @@ class PaymentManager {
           <ol>
             <li>Скопируйте адрес кошелька</li>
             <li>Скопируйте комментарий</li>
-            <li>Отправьте <strong>${invoice.amount} ${invoice.currency}</strong> на указанный адрес</li>
-            <li>Обязательно укажите комментарий!</li>
-            <li>Дождитесь подтверждения</li>
+            <li>Отправьте <strong>точно ${invoice.amount} ${invoice.currency}</strong> на указанный адрес</li>
+            <li><strong>Обязательно укажите комментарий!</strong></li>
+            <li>Дождитесь подтверждения (обычно 30-60 секунд)</li>
           </ol>
+          <div class="payment-note">
+            💡 <strong>Важно:</strong> Комментарий обязателен! Без него система не сможет найти ваш платеж.
+            Скопируйте комментарий кнопкой 📋 и вставьте в поле "Сообщение" при отправке.
+          </div>
         </div>
         
         <div class="payment-status" id="paymentStatus">
@@ -373,21 +380,22 @@ class PaymentManager {
     const qrContainer = document.getElementById('qrCode');
     if (!qrContainer) return;
 
-    // Создаем ссылку для TON кошелька
-    const tonLink = `ton://transfer/${invoice.address}?amount=${invoice.amount * 1e9}&text=${encodeURIComponent(invoice.memo)}`;
+    // Создаем ссылку для TON кошелька с комментарием
+    const tonLink = `ton://transfer/${invoice.address}?amount=${Math.floor(invoice.amount * 1e9)}&text=${encodeURIComponent(invoice.memo)}`;
     
     qrContainer.innerHTML = `
       <div class="qr-container">
         <div class="qr-title">QR код для быстрой оплаты:</div>
-        <div id="qrCodeCanvas"></div>
-        <button class="btn btn-secondary" onclick="window.open('${tonLink}', '_blank')">
-          Открыть в TON кошельке
-        </button>
+        <div id="qrCodeCanvas">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(tonLink)}" 
+               alt="QR код для оплаты" 
+               style="border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        </div>
+        <div class="qr-info">
+          QR код содержит адрес, сумму и комментарий
+        </div>
       </div>
     `;
-
-    // Здесь можно добавить библиотеку для генерации QR кода
-    // Например, qrcode.js
   }
 
   // Копирование в буфер обмена
@@ -500,14 +508,38 @@ class PaymentManager {
 
   // Показ модального окна
   showModal(content) {
+    console.log('🔍 showModal вызван с контентом:', content.substring(0, 100) + '...');
+    
     const paymentContent = document.getElementById('paymentContent');
+    console.log('🔍 paymentContent найден:', !!paymentContent);
+    
     if (paymentContent) {
       paymentContent.innerHTML = content;
+      console.log('✅ Контент добавлен в paymentContent');
+    } else {
+      console.error('❌ paymentContent не найден!');
     }
     
+    console.log('🔍 this.paymentModal:', this.paymentModal);
+    
     if (this.paymentModal) {
+      // Используем и класс и стиль для надежности
       this.paymentModal.style.display = 'block';
+      this.paymentModal.classList.add('show');
       document.body.style.overflow = 'hidden';
+      console.log('✅ Модальное окно показано');
+      
+      // Дополнительная проверка
+      setTimeout(() => {
+        const modalRect = this.paymentModal.getBoundingClientRect();
+        const computedStyle = window.getComputedStyle(this.paymentModal);
+        console.log('🔍 Размеры модального окна:', modalRect);
+        console.log('🔍 Computed display:', computedStyle.display);
+        console.log('🔍 Computed visibility:', computedStyle.visibility);
+        console.log('🔍 Computed z-index:', computedStyle.zIndex);
+      }, 100);
+    } else {
+      console.error('❌ this.paymentModal не найден!');
     }
   }
 
@@ -515,6 +547,7 @@ class PaymentManager {
   closeModal() {
     if (this.paymentModal) {
       this.paymentModal.style.display = 'none';
+      this.paymentModal.classList.remove('show');
       document.body.style.overflow = 'auto';
     }
     

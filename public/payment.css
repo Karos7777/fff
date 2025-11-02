@@ -1,11 +1,33 @@
 /* Стили для системы платежей */
 
 /* Модальное окно платежей */
-.payment-modal {
+#paymentModal {
+  display: none;
+  position: fixed !important;
+  z-index: 10000 !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: auto !important;
+  background-color: rgba(0,0,0,0.8) !important;
+}
+
+#paymentModal.show,
+#paymentModal[style*="block"] {
+  display: block !important;
+}
+
+.modal-content.payment-modal {
   max-width: 500px;
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
+  position: relative;
+  background: white;
+  margin: 5% auto;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 
 .payment-modal .modal-header {
@@ -321,13 +343,29 @@
 }
 
 .payment-instructions ol {
-  margin: 0;
+  margin: 0 0 15px 0;
   padding-left: 20px;
 }
 
 .payment-instructions li {
   margin-bottom: 8px;
   color: #555;
+}
+
+.payment-note {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  padding: 10px;
+  color: #856404;
+  font-size: 0.9rem;
+}
+
+.qr-info {
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 10px;
 }
 
 /* Опции криптовалют */

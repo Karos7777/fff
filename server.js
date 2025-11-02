@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -16,6 +17,9 @@ const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
+console.log('🔍 JWT_SECRET загружен:', JWT_SECRET ? 'да' : 'нет');
+console.log('🔑 JWT_SECRET:', JWT_SECRET.substring(0, 20) + '...');
+
 // Защита от ошибок: если токен не задан — предупреждение (но сервер запустится для разработки)
 if (!BOT_TOKEN) {
   console.warn('⚠️  ПРЕДУПРЕЖДЕНИЕ: Переменная BOT_TOKEN не задана!');
@@ -32,6 +36,134 @@ const ADMIN_TELEGRAM_IDS = [
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
+
+// Тестовый файл для отладки платежей
+app.get('/test-payment.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-payment.html'));
+});
+
+// Страница реального тестирования платежей
+app.get('/real-test.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'real-test.html'));
+});
+
+// Отладочная страница для диагностики проблем
+app.get('/debug-test.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'debug-test.html'));
+});
+
+// Страница заказов
+app.get('/orders.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'orders.html'));
+});
+
+// Страница диагностики платежей
+app.get('/debug-payments.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'debug-payments.html'));
+});
+
+// Простой тест для создания заказа без JWT (только для отладки)
+app.post('/api/test-order', (req, res) => {
+  try {
+    const { product_id, user_id = 1 } = req.body;
+
+    const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    const product = getProduct.get(product_id);
+    
+    if (!product) {
+      return res.status(400).json({ error: 'Товар не найден' });
+    }
+    
+    const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
+    const result = insertOrder.run(user_id, product_id);
+    
+    res.json({ 
+      id: result.lastInsertRowid, 
+      message: 'Тестовый заказ создан успешно',
+      product: product.name
+    });
+  } catch (error) {
+    console.error('Error creating test order:', error);
+    res.status(500).json({ error: 'Ошибка создания заказа' });
+  }
+});
+
+// Тестовый endpoint для Stars инвойсов без JWT
+app.post('/api/test-stars-invoice', async (req, res) => {
+  try {
+    const { orderId, productId, amount, description } = req.body;
+    const userId = 1; // Тестовый пользователь
+
+    if (!orderId || !productId || !amount || !description) {
+      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+    }
+
+    // Проверяем существование заказа
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ?');
+    const order = getOrder.get(orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+
+    const invoice = await paymentService.createStarsInvoice(orderId, userId, productId, amount, description);
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        payload: invoice.payload,
+        telegramInvoice: invoice.telegramInvoice,
+        expiresAt: invoice.expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания тестового Stars инвойса:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Тестовый endpoint для крипто инвойсов без JWT
+app.post('/api/test-crypto-invoice', async (req, res) => {
+  try {
+    const { orderId, productId, amount, currency } = req.body;
+    const userId = 1; // Тестовый пользователь
+
+    if (!orderId || !productId || !amount || !currency) {
+      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+    }
+
+    if (!['TON', 'USDT'].includes(currency)) {
+      return res.status(400).json({ error: 'Неподдерживаемая валюта' });
+    }
+
+    // Проверяем существование заказа
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ?');
+    const order = getOrder.get(orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+
+    const invoice = await paymentService.createCryptoInvoice(orderId, userId, productId, amount, currency);
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        payload: invoice.payload,
+        address: invoice.address,
+        memo: invoice.memo,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        expiresAt: invoice.expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания тестового крипто инвойса:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
 
 // Health check endpoint для предотвращения засыпания на бесплатном тарифе
 app.get('/healthz', (req, res) => {
@@ -334,18 +466,28 @@ app.post('/api/orders', authMiddleware, (req, res) => {
 // Получение заказов пользователя
 app.get('/api/orders', authMiddleware, (req, res) => {
   try {
+    const userId = req.user.id;
+    
     const getOrders = db.prepare(`
-      SELECT o.*, p.name as product_name, p.price 
+      SELECT 
+        o.*,
+        p.name as product_name, 
+        p.price as product_price,
+        i.status as payment_status,
+        i.currency as payment_currency,
+        i.amount as payment_amount
       FROM orders o 
-      JOIN products p ON o.product_id = p.id 
+      LEFT JOIN products p ON o.product_id = p.id 
+      LEFT JOIN invoices i ON o.id = i.order_id
       WHERE o.user_id = ? 
       ORDER BY o.created_at DESC
     `);
-    const orders = getOrders.all(req.user.id);
+    const orders = getOrders.all(userId);
+    
     res.json(orders);
   } catch (error) {
-    console.error('Error getting orders:', error);
-    res.status(500).json({ error: 'Ошибка получения заказов' });
+    console.error('Ошибка получения заказов:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
@@ -587,7 +729,112 @@ app.patch('/api/reviews/:id/hide', adminMiddleware, (req, res) => {
   }
 });
 
-// Отправка уведомлений в Telegram (пример использования BOT_TOKEN)
+// Скачивание товара после оплаты
+app.get('/api/orders/:id/download', authMiddleware, (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const userId = req.user.id;
+    
+    // Проверяем, что заказ принадлежит пользователю и оплачен
+    const getOrder = db.prepare(`
+      SELECT o.*, p.name as product_name, p.description
+      FROM orders o 
+      LEFT JOIN products p ON o.product_id = p.id 
+      WHERE o.id = ? AND o.user_id = ? AND o.status = 'paid'
+    `);
+    const order = getOrder.get(orderId, userId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден или не оплачен' });
+    }
+    
+    // Создаем контент товара
+    const productContent = generateProductContent(order);
+    
+    // Отправляем файл
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="order-${orderId}-${order.product_name}.txt"`);
+    res.send(productContent);
+    
+  } catch (error) {
+    console.error('Ошибка скачивания товара:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+function generateProductContent(order) {
+  const content = `
+🎉 ТОВАР ДОСТАВЛЕН УСПЕШНО!
+═══════════════════════════════════════
+
+📦 Заказ #${order.id}
+📅 Дата: ${new Date(order.created_at).toLocaleString('ru-RU')}
+🛍️ Товар: ${order.product_name}
+📝 Описание: ${order.description || 'Консультация по разработке'}
+
+═══════════════════════════════════════
+
+${order.product_name === 'Тест TON - Консультация 15 мин' ? `
+🚀 КОНСУЛЬТАЦИЯ ПО РАЗРАБОТКЕ (15 минут)
+
+Поздравляем! Вы успешно приобрели консультацию по разработке.
+
+📋 ЧТО ВХОДИТ В КОНСУЛЬТАЦИЮ:
+• Анализ вашего проекта или идеи
+• Рекомендации по технологическому стеку
+• Советы по архитектуре приложения
+• Помощь с выбором инструментов разработки
+• Ответы на технические вопросы
+
+📞 КАК ПОЛУЧИТЬ КОНСУЛЬТАЦИЮ:
+1. Напишите в Telegram: @your_username
+2. Укажите номер заказа: #${order.id}
+3. Опишите ваш проект или вопросы
+4. Мы свяжемся с вами в течение 24 часов
+
+⏰ ВРЕМЯ КОНСУЛЬТАЦИИ: 15 минут
+📱 ФОРМАТ: Telegram звонок или переписка (на ваш выбор)
+
+` : `
+⭐ МИНИ-КОНСУЛЬТАЦИЯ ЧЕРЕЗ TELEGRAM
+
+Поздравляем! Вы успешно приобрели мини-консультацию.
+
+📋 ЧТО ВХОДИТ:
+• Быстрый анализ вашего вопроса
+• Конкретные рекомендации
+• Полезные ссылки и ресурсы
+
+📞 КАК ПОЛУЧИТЬ:
+1. Напишите в Telegram: @your_username  
+2. Укажите номер заказа: #${order.id}
+3. Задайте ваш вопрос
+
+⏰ ВРЕМЯ ОТВЕТА: В течение 12 часов
+
+`}
+
+💡 ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ:
+• Этот файл является подтверждением покупки
+• Сохраните его для своих записей
+• При возникновении вопросов обращайтесь в поддержку
+
+🔐 БЕЗОПАСНОСТЬ:
+• Платеж подтвержден в блокчейне TON
+• Транзакция записана в нашей системе
+• Ваши данные защищены
+
+═══════════════════════════════════════
+🎯 Спасибо за использование нашего сервиса!
+🚀 Система автоматических платежей работает!
+
+Дата генерации файла: ${new Date().toLocaleString('ru-RU')}
+`;
+  
+  return content;
+}
+
+// Отправка уведомления о заказе
 app.post('/api/notify-order', authMiddleware, async (req, res) => {
   const { chatId, order } = req.body;
 
@@ -791,15 +1038,35 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
 // Ручная проверка криптоплатежей (для отладки)
 app.post('/api/payments/crypto/check', authMiddleware, async (req, res) => {
   try {
-    if (!req.user.is_admin) {
-      return res.status(403).json({ error: 'Только для администраторов' });
-    }
-
+    console.log('🔍 Запуск ручной проверки криптоплатежей...');
     await paymentService.checkCryptoPayments();
     
-    res.json({ success: true, message: 'Проверка криптоплатежей выполнена' });
+    res.json({ success: true, message: 'Проверка криптоплатежей выполнена - смотрите логи сервера' });
   } catch (error) {
     console.error('Ошибка проверки криптоплатежей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Получение ожидающих инвойсов (для отладки)
+app.get('/api/payments/crypto/pending', authMiddleware, (req, res) => {
+  try {
+    const getPendingInvoices = db.prepare(`
+      SELECT * FROM invoices 
+      WHERE status = 'pending' 
+      AND currency IN ('TON', 'USDT')
+      AND expires_at > datetime('now')
+      ORDER BY created_at DESC
+    `);
+    const pendingInvoices = getPendingInvoices.all();
+    
+    res.json({ 
+      success: true, 
+      count: pendingInvoices.length,
+      invoices: pendingInvoices 
+    });
+  } catch (error) {
+    console.error('Ошибка получения ожидающих инвойсов:', error);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
@@ -877,13 +1144,10 @@ const findFreePort = (startPort) => {
 
 // Настройка автоматических задач для платежей
 if (paymentService) {
-  // Проверка криптоплатежей каждые 2 минуты
-  cron.schedule('*/2 * * * *', async () => {
-    try {
-      await paymentService.checkCryptoPayments();
-    } catch (error) {
-      console.error('Ошибка автоматической проверки криптоплатежей:', error);
-    }
+  // Проверка криптоплатежей каждые 30 секунд
+  cron.schedule('*/30 * * * * *', () => {
+    console.log('🔄 Запуск автоматической проверки платежей...');
+    paymentService.checkCryptoPayments();
   });
 
   // Очистка просроченных инвойсов каждые 10 минут

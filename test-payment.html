@@ -96,22 +96,18 @@
         }
         
         async function testCreateOrder() {
-            if (!authToken) {
-                alert('Сначала авторизуйтесь!');
-                return;
-            }
-            
             const productId = document.getElementById('productId').value;
             
             try {
-                const response = await fetch('/api/orders', {
+                // Используем тестовый endpoint без JWT
+                const response = await fetch('/api/test-order', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        product_id: parseInt(productId)
+                        product_id: parseInt(productId),
+                        user_id: 1
                     })
                 });
                 
@@ -132,8 +128,8 @@
         }
         
         async function testStarsInvoice() {
-            if (!authToken || !currentOrderId) {
-                alert('Сначала авторизуйтесь и создайте заказ!');
+            if (!currentOrderId) {
+                alert('Сначала создайте заказ!');
                 return;
             }
             
@@ -141,11 +137,10 @@
             const description = document.getElementById('starsDescription').value;
             
             try {
-                const response = await fetch('/api/payments/stars/create-invoice', {
+                const response = await fetch('/api/test-stars-invoice', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         orderId: currentOrderId,
@@ -172,8 +167,8 @@
         }
         
         async function testCryptoInvoice() {
-            if (!authToken || !currentOrderId) {
-                alert('Сначала авторизуйтесь и создайте заказ!');
+            if (!currentOrderId) {
+                alert('Сначала создайте заказ!');
                 return;
             }
             
@@ -181,11 +176,10 @@
             const currency = document.getElementById('cryptoCurrency').value;
             
             try {
-                const response = await fetch('/api/payments/crypto/create-invoice', {
+                const response = await fetch('/api/test-crypto-invoice', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         orderId: currentOrderId,
