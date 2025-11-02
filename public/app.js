@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -139,10 +139,35 @@ const translations = {
   
       // Заказы
       myOrders: 'Мои заказы',
-      statusPending: 'Ожидает',
-      statusProcessing: 'В ОБРАБОТКЕ',
-      statusCompleted: 'ЗАВЕРШЁН',
-      statusCancelled: 'ОТМЕНЁН',
+      orderNumber: 'Заказ №',
+      orderDate: 'Дата заказа',
+      orderStatus: 'Статус',
+      orderPrice: 'Сумма',
+      orderProduct: 'Товар',
+      statusPending: 'Ожидает оплаты',
+      statusPaid: 'Оплачен',
+      statusProcessing: 'В обработке',
+      statusCompleted: 'Завершён',
+      statusCancelled: 'Отменён',
+      statusExpired: 'Истёк',
+      cancelOrder: 'Отменить заказ',
+      cancelOrderConfirm: 'Вы уверены, что хотите отменить этот заказ?',
+      orderCancelled: 'Заказ отменён',
+      payAgain: 'Оплатить снова',
+      timeLeft: 'Осталось времени',
+      expiresIn: 'Истекает через',
+      noOrders: 'У вас пока нет заказов',
+      startShopping: 'Начните делать покупки!',
+      
+      // Отзывы
+      leaveReview: 'Оставить отзыв',
+      rating: 'Оценка',
+      reviewText: 'Ваш отзыв',
+      submit: 'Отправить',
+      reviewSubmitted: 'Спасибо за отзыв!',
+      selectRating: 'Пожалуйста, выберите оценку',
+      reviews: 'Отзывы',
+      noReviews: 'Отзывов пока нет',
   
       // Поддержка
       support: 'Поддержка',
@@ -157,6 +182,7 @@ const translations = {
   
       // Админ-панель и модальные окна
       addService: 'Добавить услугу',
+      submit: 'Отправить',
       addServiceTitle: 'Добавить услугу',
       formName: 'Название *',
       formDescription: 'Описание',
@@ -410,6 +436,61 @@ function setupEventListeners() {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
     }
+
+    // Кнопка "Мои заказы"
+    const myOrdersBtn = document.getElementById('myOrdersBtn');
+    if (myOrdersBtn) {
+        myOrdersBtn.addEventListener('click', showOrdersModal);
+    }
+
+    // Модальное окно заказов
+    const closeOrdersModal = document.getElementById('closeOrdersModal');
+    if (closeOrdersModal) {
+        closeOrdersModal.addEventListener('click', () => {
+            document.getElementById('ordersModal').style.display = 'none';
+        });
+    }
+
+    // Модальное окно отзывов
+    const closeReviewModal = document.getElementById('closeReviewModal');
+    const cancelReviewBtn = document.getElementById('cancelReviewBtn');
+    const reviewForm = document.getElementById('reviewForm');
+    
+    if (closeReviewModal) {
+        closeReviewModal.addEventListener('click', () => {
+            document.getElementById('reviewModal').style.display = 'none';
+        });
+    }
+    
+    if (cancelReviewBtn) {
+        cancelReviewBtn.addEventListener('click', () => {
+            document.getElementById('reviewModal').style.display = 'none';
+        });
+    }
+    
+    if (reviewForm) {
+        reviewForm.addEventListener('submit', handleReviewSubmit);
+    }
+
+    // Система рейтинга
+    const ratingStars = document.querySelectorAll('#ratingInput .star');
+    ratingStars.forEach(star => {
+        star.addEventListener('click', function() {
+            const rating = this.getAttribute('data-rating');
+            document.getElementById('ratingValue').value = rating;
+            
+            // Обновляем визуальное отображение
+            ratingStars.forEach((s, index) => {
+                if (index < rating) {
+                    s.textContent = '★'; // Заполненная звезда
+                    s.classList.add('active');
+                } else {
+                    s.textContent = '☆'; // Пустая звезда
+                    s.classList.remove('active');
+                }
+            });
+        });
+    });
 
     // Поиск с автодополнением
     const searchInput = document.getElementById('searchInput');
@@ -1347,6 +1428,11 @@ function showUserInfo() {
   }
   
   document.getElementById('userName').textContent = displayName;
+
+  // Показываем кнопку "Мои заказы"
+  if (typeof showMyOrdersButton === 'function') {
+      showMyOrdersButton();
+  }
 
   // Показываем админ-кнопку, если is_admin
   if (currentUser.is_admin) {

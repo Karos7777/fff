@@ -549,6 +549,141 @@ app.get('/api/orders', authMiddleware, (req, res) => {
   }
 });
 
+// Отмена заказа
+app.post('/api/orders/:id/cancel', authMiddleware, (req, res) => {
+  console.log('\n❌ [ORDER CANCEL] Запрос на отмену заказа');
+  try {
+    const orderId = parseInt(req.params.id);
+    const userId = req.user.id;
+    
+    console.log('❌ [ORDER CANCEL] Order ID:', orderId, 'User ID:', userId);
+    
+    // Проверяем, что заказ принадлежит пользователю
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
+    const order = getOrder.get(orderId, userId);
+    
+    if (!order) {
+      console.error('❌ [ORDER CANCEL] Заказ не найден');
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    // Проверяем, можно ли отменить
+    if (!['pending', 'pending_crypto'].includes(order.status)) {
+      console.error('❌ [ORDER CANCEL] Нельзя отменить заказ со статусом:', order.status);
+      return res.status(400).json({ error: 'Невозможно отменить этот заказ' });
+    }
+    
+    // Отменяем заказ
+    const updateOrder = db.prepare('UPDATE orders SET status = ? WHERE id = ?');
+    updateOrder.run('cancelled', orderId);
+    
+    console.log('✅ [ORDER CANCEL] Заказ отменён');
+    
+    res.json({ 
+      success: true, 
+      message: 'Заказ успешно отменён' 
+    });
+  } catch (error) {
+    console.error('❌ [ORDER CANCEL] Ошибка:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Автоматическое истечение заказа
+app.post('/api/orders/:id/expire', authMiddleware, (req, res) => {
+  console.log('\n⏰ [ORDER EXPIRE] Запрос на истечение заказа');
+  try {
+    const orderId = parseInt(req.params.id);
+    const userId = req.user.id;
+    
+    // Проверяем, что заказ принадлежит пользователю
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
+    const order = getOrder.get(orderId, userId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    // Проверяем, что прошёл 1 час
+    const createdAt = new Date(order.created_at);
+    const now = new Date();
+    const hourInMs = 60 * 60 * 1000;
+    
+    if (now - createdAt >= hourInMs && ['pending', 'pending_crypto'].includes(order.status)) {
+      const updateOrder = db.prepare('UPDATE orders SET status = ? WHERE id = ?');
+      updateOrder.run('expired', orderId);
+      
+      console.log('✅ [ORDER EXPIRE] Заказ истёк');
+      
+      res.json({ 
+        success: true, 
+        message: 'Заказ истёк' 
+      });
+    } else {
+      res.json({ 
+        success: false, 
+        message: 'Заказ ещё активен' 
+      });
+    }
+  } catch (error) {
+    console.error('❌ [ORDER EXPIRE] Ошибка:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Создание отзыва
+app.post('/api/reviews', authMiddleware, (req, res) => {
+  console.log('\n⭐ [REVIEW] Создание отзыва');
+  try {
+    const { product_id, order_id, rating, text } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [REVIEW] Product ID:', product_id, 'Order ID:', order_id, 'Rating:', rating);
+    
+    // Проверяем, что заказ принадлежит пользователю и завершён
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ? AND product_id = ?');
+    const order = getOrder.get(order_id, userId, product_id);
+    
+    if (!order) {
+      console.error('❌ [REVIEW] Заказ не найден');
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    if (order.status !== 'completed') {
+      console.error('❌ [REVIEW] Заказ не завершён');
+      return res.status(400).json({ error: 'Можно оставить отзыв только на завершённый заказ' });
+    }
+    
+    // Проверяем, нет ли уже отзыва
+    const checkReview = db.prepare('SELECT * FROM reviews WHERE order_id = ? AND user_id = ?');
+    const existingReview = checkReview.get(order_id, userId);
+    
+    if (existingReview) {
+      console.error('❌ [REVIEW] Отзыв уже существует');
+      return res.status(400).json({ error: 'Вы уже оставили отзыв на этот заказ' });
+    }
+    
+    // Создаём отзыв
+    const insertReview = db.prepare(`
+      INSERT INTO reviews (product_id, order_id, user_id, rating, text)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    
+    const result = insertReview.run(product_id, order_id, userId, rating, text || '');
+    
+    console.log('✅ [REVIEW] Отзыв создан, ID:', result.lastInsertRowid);
+    
+    res.json({ 
+      success: true, 
+      message: 'Спасибо за отзыв!',
+      review_id: result.lastInsertRowid
+    });
+  } catch (error) {
+    console.error('❌ [REVIEW] Ошибка:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // АДМИНСКИЕ МАРШРУТЫ
 
 // Получение статистики для дашборда
@@ -1465,6 +1600,43 @@ const startServer = async () => {
       } else {
         console.log('⚠️  BOT_TOKEN не настроен - уведомления Telegram недоступны');
       }
+      
+      // Запускаем cron задачу для автоматической отмены истёкших заказов
+      console.log('⏰ Запуск cron задачи для автоотмены заказов (каждые 5 минут)');
+      cron.schedule('*/5 * * * *', () => {
+        try {
+          console.log('\n⏰ [CRON] Проверка истёкших заказов...');
+          
+          const now = new Date();
+          const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+          
+          // Находим все заказы старше 1 часа со статусом pending
+          const getExpiredOrders = db.prepare(`
+            SELECT * FROM orders 
+            WHERE status IN ('pending', 'pending_crypto') 
+            AND created_at < ?
+          `);
+          
+          const expiredOrders = getExpiredOrders.all(hourAgo.toISOString());
+          
+          if (expiredOrders.length > 0) {
+            console.log(`⏰ [CRON] Найдено истёкших заказов: ${expiredOrders.length}`);
+            
+            const updateOrder = db.prepare('UPDATE orders SET status = ? WHERE id = ?');
+            
+            expiredOrders.forEach(order => {
+              updateOrder.run('expired', order.id);
+              console.log(`⏰ [CRON] Заказ #${order.id} отменён (истёк)`);
+            });
+            
+            console.log(`✅ [CRON] Обработано заказов: ${expiredOrders.length}`);
+          } else {
+            console.log('⏰ [CRON] Истёкших заказов не найдено');
+          }
+        } catch (error) {
+          console.error('❌ [CRON] Ошибка при проверке заказов:', error);
+        }
+      });
     });
   } catch (error) {
     console.error('❌ Ошибка запуска сервера:', error);
