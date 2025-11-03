@@ -111,7 +111,7 @@ class PaymentManager {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
           orderId,
@@ -265,16 +265,16 @@ class PaymentManager {
       this.showLoading('Создание криптосчета...');
       
       // Конвертируем цену в криптовалюту для тестирования
-      // 1 рубль = 0.01 TON или 0.01 USDT (минимальные суммы для теста)
+      // 1 рубль = 0.001 TON или 0.001 USDT (минимальные суммы для теста)
       const cryptoAmount = currency === 'TON' ? 
-        Math.max(price / 100, 0.01).toFixed(4) : 
-        Math.max(price / 90, 0.01).toFixed(4);
+        Math.max(price / 100, 0.001).toFixed(4) : 
+        Math.max(price / 90, 0.001).toFixed(4);
       
       const response = await fetch('/api/payments/crypto/create-invoice', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
           orderId,
@@ -426,7 +426,7 @@ class PaymentManager {
       try {
         const response = await fetch(`/api/payments/status/${payload}`, {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
           }
         });
 

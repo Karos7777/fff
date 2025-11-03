@@ -235,6 +235,9 @@ async function initDB() {
         name TEXT NOT NULL,
         description TEXT,
         price DECIMAL(10,2) NOT NULL,
+        price_ton DECIMAL(10,4),
+        price_usdt DECIMAL(10,4),
+        price_stars INTEGER,
         image_url TEXT,
         category TEXT,
         stock INTEGER DEFAULT 0,
@@ -244,6 +247,31 @@ async function initDB() {
       )
     `);
 
+    // Таблица отзывов
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comment TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Миграция: добавляем новые колонки цен если их нет
+    try {
+      await db.exec(`
+        ALTER TABLE products 
+        ADD COLUMN IF NOT EXISTS price_ton DECIMAL(10,4),
+        ADD COLUMN IF NOT EXISTS price_usdt DECIMAL(10,4),
+        ADD COLUMN IF NOT EXISTS price_stars INTEGER
+      `);
+      console.log('✅ Миграция: колонки price_ton, price_usdt, price_stars проверены/добавлены');
+    } catch (e) {
+      console.log('⚠️ Миграция цен: колонки уже существуют или ошибка:', e.message);
+    }
+    
     // Таблица заказов
     await db.exec(`
       CREATE TABLE IF NOT EXISTS orders (
@@ -254,20 +282,6 @@ async function initDB() {
         price DECIMAL(10,2),
         payment_method TEXT,
         transaction_hash TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-
-    // Таблица отзывов
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS reviews (
-        id SERIAL PRIMARY KEY,
-        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-        order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
-        text TEXT,
-        is_hidden BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
