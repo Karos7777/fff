@@ -604,21 +604,32 @@ app.get('/api/products/:id', async (req, res) => {
 // Создание заказа
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
+    console.log('📦 [SERVER] Создание заказа...');
+    console.log('📦 [SERVER] Request body:', req.body);
+    console.log('📦 [SERVER] User:', req.user);
+    
     const { product_id } = req.body;
     const user_id = req.user.id;
 
+    console.log('📦 [SERVER] product_id:', product_id, 'user_id:', user_id);
+
     const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    console.log('📦 [SERVER] Запрос товара...');
     const product = await getProduct.get(product_id);
+    console.log('📦 [SERVER] Товар найден:', product);
     
     if (!product) {
       return res.status(400).json({ error: 'Товар не найден' });
     }
     
+    console.log('📦 [SERVER] Создание записи заказа...');
     const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
+    console.log('📦 [SERVER] SQL подготовлен, выполнение...');
     const result = await insertOrder.run(user_id, product_id);
     
     console.log('✅ [SERVER] Заказ создан, result:', result);
     console.log('✅ [SERVER] Заказ ID:', result.lastInsertRowid);
+    console.log('✅ [SERVER] result.changes:', result.changes);
     
     // Начисляем 5% пригласившему
     const getUser = db.prepare('SELECT referrer_id FROM users WHERE id = ?');
@@ -632,8 +643,12 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     
     res.json({ id: result.lastInsertRowid, message: 'Заказ создан успешно' });
   } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ error: 'Ошибка создания заказа' });
+    console.error('❌ [SERVER] Error creating order:', error);
+    console.error('❌ [SERVER] Error message:', error.message);
+    console.error('❌ [SERVER] Error stack:', error.stack);
+    console.error('❌ [SERVER] Request body:', req.body);
+    console.error('❌ [SERVER] User ID:', req.user?.id);
+    res.status(500).json({ error: 'Ошибка создания заказа', details: error.message });
   }
 });
 
