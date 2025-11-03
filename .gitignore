@@ -78,3 +78,5 @@ Thumbs.db
 # ngrok
 ngrok/
 ngrok.exe 
+
+.data/

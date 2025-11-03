@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const Database = require('better-sqlite3');
+const PostgresAdapter = require('./db-postgres');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -205,80 +205,108 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Инициализация базы данных
-const db = new Database('shop.db');
+// Инициализация базы данных PostgreSQL
+const db = new PostgresAdapter(process.env.DATABASE_URL);
 
-// Создание таблиц (better-sqlite3 синхронный, не нужен serialize)
-try {
-  // Таблица пользователей
-  db.exec(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id TEXT UNIQUE,
-    username TEXT,
-    first_name TEXT,
-    last_name TEXT,
-    is_admin BOOLEAN DEFAULT 0,
-    referrer_id INTEGER,
-    referral_earnings REAL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  
-  // Добавляем новые колонки если их нет (для существующих баз данных)
+// Функция для создания таблиц PostgreSQL
+async function initDB() {
   try {
-    db.exec(`ALTER TABLE users ADD COLUMN first_name TEXT`);
-  } catch (e) { /* колонка уже существует */ }
-  
-  try {
-    db.exec(`ALTER TABLE users ADD COLUMN last_name TEXT`);
-  } catch (e) { /* колонка уже существует */ }
+    console.log('🔄 Инициализация базы данных PostgreSQL...');
+    
+    // Таблица пользователей
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        telegram_id BIGINT UNIQUE NOT NULL,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        is_admin BOOLEAN DEFAULT false,
+        referrer_id INTEGER,
+        referral_earnings DECIMAL(10,2) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  // Таблица товаров
-  db.exec(`CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price REAL NOT NULL,
-    image_url TEXT,
-    category TEXT,
-    stock INTEGER DEFAULT 0,
-    infinite_stock BOOLEAN DEFAULT 0,
-    is_active BOOLEAN DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+    // Таблица товаров
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        price DECIMAL(10,2) NOT NULL,
+        image_url TEXT,
+        category TEXT,
+        stock INTEGER DEFAULT 0,
+        infinite_stock BOOLEAN DEFAULT false,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  // Таблица заказов
-  db.exec(`CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    product_id INTEGER,
-    status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users (id),
-    FOREIGN KEY (product_id) REFERENCES products (id) 
-  )`);
+    // Таблица заказов
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        status TEXT DEFAULT 'pending',
+        price DECIMAL(10,2),
+        payment_method TEXT,
+        transaction_hash TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  // Таблица отзывов
-  db.exec(`CREATE TABLE IF NOT EXISTS reviews (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id INTEGER,
-    user_id INTEGER,
-    rating INTEGER NOT NULL,
-    text TEXT,
-    is_hidden BOOLEAN DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (product_id) REFERENCES products (id),
-    FOREIGN KEY (user_id) REFERENCES users (id)
-  )`);
+    // Таблица отзывов
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id SERIAL PRIMARY KEY,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+        text TEXT,
+        is_hidden BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  // Добавляем админа по умолчанию (замените на свой Telegram ID)
-  const insertAdmin = db.prepare(`INSERT OR IGNORE INTO users (telegram_id, username, is_admin) VALUES (?, ?, ?)`);
-  insertAdmin.run('853232715', 'admin', 1);
-  
-  console.log('✅ База данных инициализирована успешно');
-} catch (error) {
-  console.error('❌ Ошибка инициализации базы данных:', error);
-  process.exit(1);
+    // Таблица инвойсов (для платежей)
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        currency TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        payment_url TEXT,
+        invoice_id TEXT UNIQUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Добавляем админа по умолчанию
+    const insertAdmin = db.prepare(`
+      INSERT INTO users (telegram_id, username, is_admin) 
+      VALUES ($1, $2, $3)
+      ON CONFLICT (telegram_id) DO NOTHING
+    `);
+    await insertAdmin.run('853232715', 'admin', true);
+    
+    console.log('✅ База данных PostgreSQL инициализирована успешно');
+  } catch (error) {
+    console.error('❌ Ошибка инициализации базы данных:', error);
+    throw error;
+  }
 }
+
+// Запускаем инициализацию (будет выполнено при старте сервера)
+initDB().catch(err => {
+  console.error('❌ Критическая ошибка при инициализации БД:', err);
+  process.exit(1);
+});
 
 // Инициализация сервиса платежей
 let paymentService;
