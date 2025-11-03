@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.4.1';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -49,7 +49,6 @@ const APP_VERSION = '2.4.0';
 let currentUser = null;
 let products = [];
 let orders = [];
-let recentlyViewed = [];
 let favorites = [];
 let searchSuggestions = [];
 let currentFilters = {
@@ -133,9 +132,6 @@ const translations = {
       // Детали товара
       productReviews: 'Отзывы о товаре',
       noDescription: 'Описание отсутствует',
-  
-      // Недавно просмотренные
-      recentlyViewed: 'Недавно просмотренные',
   
       // Заказы
       myOrders: 'Мои заказы',
@@ -281,9 +277,6 @@ const translations = {
       productReviews: 'Product reviews',
       noDescription: 'No description provided',
   
-      // Recently Viewed
-      recentlyViewed: 'Recently Viewed',
-  
       // Orders
       myOrders: 'My Orders',
       statusPending: 'Pending',
@@ -413,13 +406,11 @@ function initializeApp() {
 
 // Загрузка данных из localStorage
 function loadLocalData() {
-    recentlyViewed = JSON.parse(localStorage.getItem('recentlyViewed') || '[]');
     favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
 }
 
 // Сохранение данных в localStorage
 function saveLocalData() {
-    localStorage.setItem('recentlyViewed', JSON.stringify(recentlyViewed));
     localStorage.setItem('favorites', JSON.stringify(favorites));
 }
 
@@ -1290,9 +1281,6 @@ async function viewProduct(productId) {
         
         const product = await response.json();
         
-        // Добавляем в недавно просмотренные
-        addToRecentlyViewed(productId);
-        
         // Определяем отображение остатка
         let stockDisplay = '';
         let stockClass = '';
@@ -1360,47 +1348,6 @@ async function viewProduct(productId) {
         console.error('Ошибка загрузки товара:', error);
         showError('Ошибка загрузки товара');
     }
-}
-
-// Добавление в недавно просмотренные
-function addToRecentlyViewed(productId) {
-    const index = recentlyViewed.indexOf(productId);
-    if (index > -1) {
-        recentlyViewed.splice(index, 1);
-    }
-    recentlyViewed.unshift(productId);
-    recentlyViewed = recentlyViewed.slice(0, 10); // Максимум 10 товаров
-    saveLocalData();
-    updateRecentlyViewed();
-}
-
-// Обновление недавно просмотренных
-function updateRecentlyViewed() {
-    if (recentlyViewed.length === 0) return;
-    
-    const recentlyViewedProducts = products.filter(p => recentlyViewed.includes(p.id));
-    if (recentlyViewedProducts.length === 0) return;
-    
-    const container = document.getElementById('recentlyViewedGrid');
-    container.innerHTML = recentlyViewedProducts.map(product => `
-        <div class="product-card slide-up">
-            <div class="product-image">
-                ${product.image_url ? 
-                    `<img src="${product.image_url}" alt="${product.name}">` :
-                    `<span>🛍️</span>`
-                }
-            </div>
-            <div class="product-info">
-                <div class="product-name">${product.name}</div>
-                <div class="product-price">${product.price} $</div>
-                <div class="product-actions">
-                    <button class="btn-primary" onclick="viewProduct(${product.id})">${translations[currentLang].details}</button>
-                </div>
-            </div>
-        </div>
-    `).join('');
-    
-    document.getElementById('recentlyViewed').style.display = 'block';
 }
 
 // Инициализация Telegram WebApp

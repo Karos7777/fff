@@ -56,6 +56,11 @@ class PaymentManager {
   // Показ опций оплаты для заказа
   async showPaymentOptions(orderId, productId, productName, price) {
     try {
+      console.log('💳 [PAYMENT] showPaymentOptions:', { orderId, productId, productName, price });
+      
+      if (!orderId || !productId) {
+        throw new Error('Отсутствует ID заказа или товара');
+      }
       const content = `
         <div class="payment-options">
           <div class="order-info">
@@ -262,6 +267,12 @@ class PaymentManager {
   // Инициация криптоплатежа
   async initCryptoPayment(orderId, productId, price, productName, currency) {
     try {
+      console.log('💎 [CRYPTO] initCryptoPayment:', { orderId, productId, price, productName, currency });
+      
+      if (!orderId || !productId || !price || !currency) {
+        throw new Error('Отсутствуют обязательные параметры');
+      }
+      
       this.showLoading('Создание криптосчета...');
       
       // Конвертируем цену в криптовалюту для тестирования
@@ -269,6 +280,8 @@ class PaymentManager {
       const cryptoAmount = currency === 'TON' ? 
         Math.max(price / 100, 0.001).toFixed(4) : 
         Math.max(price / 90, 0.001).toFixed(4);
+      
+      console.log('💰 [CRYPTO] Рассчитанная сумма:', cryptoAmount, currency);
       
       const response = await fetch('/api/payments/crypto/create-invoice', {
         method: 'POST',
@@ -283,6 +296,8 @@ class PaymentManager {
           currency
         })
       });
+      
+      console.log('📡 [CRYPTO] Ответ сервера:', response.status);
 
       const data = await response.json();
       

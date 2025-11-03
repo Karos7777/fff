@@ -961,19 +961,6 @@ body {
   font-weight: 700;
 }
 
-/* Recently Viewed */
-.recently-viewed {
-  margin-top: 40px;
-  padding-top: 30px;
-  border-top: 2px solid var(--gray-200);
-}
-
-.recently-viewed h2 {
-  margin-bottom: 20px;
-  color: var(--gray-800);
-  font-weight: 700;
-}
-
 /* Share */
 .share-buttons {
   display: flex;
@@ -1621,6 +1608,9 @@ body {
 /* Add Service Modal */
 #addServiceModal .modal-content {
   max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 #addServiceModal .form-group {
   margin-bottom: 18px;
