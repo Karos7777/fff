@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.3.2';
+const APP_VERSION = '2.4.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -578,8 +578,24 @@ function setupEventListeners() {
         addServiceForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             try {
-                showLoading();
                 const formData = new FormData(addServiceForm);
+                
+                // Валидация: хотя бы одна цена должна быть заполнена
+                const priceTon = parseFloat(formData.get('price_ton')) || 0;
+                const priceUsdt = parseFloat(formData.get('price_usdt')) || 0;
+                const priceStars = parseInt(formData.get('price_stars')) || 0;
+                
+                if (priceTon === 0 && priceUsdt === 0 && priceStars === 0) {
+                    showError('Заполните хотя бы одну цену (TON, USDT или Stars)');
+                    return;
+                }
+                
+                // Автоматически заполняем поле price для совместимости
+                // Берем первую ненулевую цену
+                const compatPrice = priceTon || priceUsdt || (priceStars / 100) || 1;
+                formData.set('price', compatPrice);
+                
+                showLoading();
                 const token = localStorage.getItem('authToken');
                 const response = await fetch('/api/admin/products', {
                     method: 'POST',
@@ -595,6 +611,7 @@ function setupEventListeners() {
                 await loadProducts();
             } catch (err) {
                 showError('Ошибка добавления услуги');
+                console.error('Ошибка добавления услуги:', err);
             } finally {
                 hideLoading();
             }

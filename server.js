@@ -557,6 +557,9 @@ app.get('/api/products', async (req, res) => {
     const result = products.map(p => ({
       ...p,
       price: parseFloat(p.price), // Конвертируем DECIMAL в number
+      price_ton: p.price_ton ? parseFloat(p.price_ton) : null,
+      price_usdt: p.price_usdt ? parseFloat(p.price_usdt) : null,
+      price_stars: p.price_stars ? parseInt(p.price_stars) : null,
       rating: parseFloat(ratingMap[p.id]?.avg_rating) || 0,
       reviewsCount: parseInt(ratingMap[p.id]?.reviews_count) || 0
     }));
@@ -586,6 +589,9 @@ app.get('/api/products/:id', async (req, res) => {
     res.json({
       ...product,
       price: parseFloat(product.price),
+      price_ton: product.price_ton ? parseFloat(product.price_ton) : null,
+      price_usdt: product.price_usdt ? parseFloat(product.price_usdt) : null,
+      price_stars: product.price_stars ? parseInt(product.price_stars) : null,
       rating: parseFloat(rating?.avg_rating) || 0,
       reviewsCount: parseInt(rating?.reviews_count) || 0
     });
@@ -1006,15 +1012,23 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
       category: req.body.category
     });
     
+    // Парсим цены в разных валютах
+    const priceTon = req.body.price_ton ? parseFloat(req.body.price_ton) : null;
+    const priceUsdt = req.body.price_usdt ? parseFloat(req.body.price_usdt) : null;
+    const priceStars = req.body.price_stars ? parseInt(req.body.price_stars) : null;
+    
     const insertProduct = db.prepare(`
-      INSERT INTO products (name, description, price, category, stock, infinite_stock, image_url, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, true)
+      INSERT INTO products (name, description, price, price_ton, price_usdt, price_stars, category, stock, infinite_stock, image_url, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true)
     `);
     
     const result = await insertProduct.run(
       req.body.name,
       req.body.description || '',
       price,
+      priceTon,
+      priceUsdt,
+      priceStars,
       req.body.category || 'other',
       stock,
       infiniteStock,
