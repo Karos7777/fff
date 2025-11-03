@@ -208,6 +208,9 @@ const upload = multer({ storage });
 // Инициализация базы данных PostgreSQL
 const db = new PostgresAdapter(process.env.DATABASE_URL);
 
+// Создаём экземпляр authMiddleware с доступом к db
+const authMiddlewareWithDB = authMiddleware(db);
+
 // Функция для создания таблиц PostgreSQL
 async function initDB() {
   try {
@@ -602,7 +605,7 @@ app.get('/api/products/:id', async (req, res) => {
 });
 
 // Создание заказа
-app.post('/api/orders', authMiddleware, async (req, res) => {
+app.post('/api/orders', authMiddlewareWithDB, async (req, res) => {
   try {
     console.log('📦 [SERVER] Создание заказа...');
     console.log('📦 [SERVER] Request body:', req.body);
@@ -653,7 +656,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
 });
 
 // Получение заказов пользователя
-app.get('/api/orders', authMiddleware, async (req, res) => {
+app.get('/api/orders', authMiddlewareWithDB, async (req, res) => {
   try {
     const userId = req.user.id;
     
@@ -681,7 +684,7 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
 });
 
 // Отмена заказа
-app.post('/api/orders/:id/cancel', authMiddleware, (req, res) => {
+app.post('/api/orders/:id/cancel', authMiddlewareWithDB, (req, res) => {
   console.log('\n❌ [ORDER CANCEL] Запрос на отмену заказа');
   try {
     const orderId = parseInt(req.params.id);
@@ -721,7 +724,7 @@ app.post('/api/orders/:id/cancel', authMiddleware, (req, res) => {
 });
 
 // Автоматическое истечение заказа
-app.post('/api/orders/:id/expire', authMiddleware, (req, res) => {
+app.post('/api/orders/:id/expire', authMiddlewareWithDB, (req, res) => {
   console.log('\n⏰ [ORDER EXPIRE] Запрос на истечение заказа');
   try {
     const orderId = parseInt(req.params.id);
@@ -763,7 +766,7 @@ app.post('/api/orders/:id/expire', authMiddleware, (req, res) => {
 });
 
 // Создание отзыва
-app.post('/api/reviews', authMiddleware, (req, res) => {
+app.post('/api/reviews', authMiddlewareWithDB, (req, res) => {
   console.log('\n⭐ [REVIEW] Создание отзыва');
   try {
     const { product_id, order_id, rating, text } = req.body;
@@ -816,7 +819,7 @@ app.post('/api/reviews', authMiddleware, (req, res) => {
 });
 
 // Удаление заказа из истории
-app.delete('/api/orders/:id', authMiddleware, (req, res) => {
+app.delete('/api/orders/:id', authMiddlewareWithDB, (req, res) => {
   console.log('\n🗑️ [ORDER DELETE] Запрос на удаление заказа');
   try {
     const orderId = parseInt(req.params.id);
@@ -1153,7 +1156,7 @@ app.get('/api/products/:id/reviews', (req, res) => {
 });
 
 // Добавить отзыв (только если есть заказ)
-app.post('/api/reviews', authMiddleware, (req, res) => {
+app.post('/api/reviews', authMiddlewareWithDB, (req, res) => {
   try {
     const { product_id, rating, text } = req.body;
     const user_id = req.user.id;
@@ -1203,7 +1206,7 @@ app.patch('/api/reviews/:id/hide', adminMiddleware, (req, res) => {
 });
 
 // Скачивание товара после оплаты
-app.get('/api/orders/:id/download', authMiddleware, (req, res) => {
+app.get('/api/orders/:id/download', authMiddlewareWithDB, (req, res) => {
   try {
     const orderId = req.params.id;
     const userId = req.user.id;
@@ -1308,7 +1311,7 @@ ${order.product_name === 'Тест TON - Консультация 15 мин' ? `
 }
 
 // Отправка уведомления о заказе
-app.post('/api/notify-order', authMiddleware, async (req, res) => {
+app.post('/api/notify-order', authMiddlewareWithDB, async (req, res) => {
   const { chatId, order } = req.body;
 
   if (!BOT_TOKEN) {
@@ -1342,7 +1345,7 @@ app.post('/api/notify-order', authMiddleware, async (req, res) => {
 // ===== PAYMENT API ENDPOINTS =====
 
 // Создание инвойса для Stars
-app.post('/api/payments/stars/create-invoice', authMiddleware, async (req, res) => {
+app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req, res) => {
   try {
     const { orderId, productId, amount, description } = req.body;
     const userId = req.user.id;
@@ -1377,7 +1380,7 @@ app.post('/api/payments/stars/create-invoice', authMiddleware, async (req, res) 
 });
 
 // Создание инвойса для криптовалют
-app.post('/api/payments/crypto/create-invoice', authMiddleware, async (req, res) => {
+app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req, res) => {
   try {
     const { orderId, productId, amount, currency } = req.body;
     const userId = req.user.id;
@@ -1419,7 +1422,7 @@ app.post('/api/payments/crypto/create-invoice', authMiddleware, async (req, res)
 });
 
 // Получение статуса платежа
-app.get('/api/payments/status/:payload', authMiddleware, (req, res) => {
+app.get('/api/payments/status/:payload', authMiddlewareWithDB, (req, res) => {
   try {
     const { payload } = req.params;
     const userId = req.user.id;
@@ -1509,7 +1512,7 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
 });
 
 // Ручная проверка криптоплатежей (для отладки)
-app.post('/api/payments/crypto/check', authMiddleware, async (req, res) => {
+app.post('/api/payments/crypto/check', authMiddlewareWithDB, async (req, res) => {
   try {
     console.log('🔍 Запуск ручной проверки криптоплатежей...');
     await paymentService.checkCryptoPayments();
@@ -1522,7 +1525,7 @@ app.post('/api/payments/crypto/check', authMiddleware, async (req, res) => {
 });
 
 // Получение ожидающих инвойсов (для отладки)
-app.get('/api/payments/crypto/pending', authMiddleware, (req, res) => {
+app.get('/api/payments/crypto/pending', authMiddlewareWithDB, (req, res) => {
   try {
     const getPendingInvoices = db.prepare(`
       SELECT * FROM invoices 
@@ -1545,7 +1548,7 @@ app.get('/api/payments/crypto/pending', authMiddleware, (req, res) => {
 });
 
 // Проверка роли пользователя
-app.get('/api/user/role', authMiddleware, (req, res) => {
+app.get('/api/user/role', authMiddlewareWithDB, (req, res) => {
   try {
     // Проверяем админские права по Telegram ID
     const adminIds = process.env.ADMIN_TELEGRAM_IDS ? process.env.ADMIN_TELEGRAM_IDS.split(',') : [];
@@ -1681,7 +1684,7 @@ app.get('/api/admin/products', adminMiddleware, (req, res) => {
 });
 
 // Получение истории платежей пользователя
-app.get('/api/payments/history', authMiddleware, (req, res) => {
+app.get('/api/payments/history', authMiddlewareWithDB, (req, res) => {
   try {
     const userId = req.user.id;
     
