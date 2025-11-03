@@ -602,32 +602,34 @@ app.get('/api/products/:id', async (req, res) => {
 });
 
 // Создание заказа
-app.post('/api/orders', authMiddleware, (req, res) => {
+app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { product_id } = req.body;
     const user_id = req.user.id;
 
-    const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
-    const product = getProduct.get(product_id);
+    const getProduct = db.prepare('SELECT * FROM products WHERE id = $1');
+    const product = await getProduct.get(product_id);
     
     if (!product) {
       return res.status(400).json({ error: 'Товар не найден' });
     }
     
-    const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
-    const result = insertOrder.run(user_id, product_id);
+    const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES ($1, $2) RETURNING id');
+    const result = await insertOrder.get(user_id, product_id);
+    
+    console.log('✅ [SERVER] Заказ создан, ID:', result.id);
     
     // Начисляем 5% пригласившему
-    const getUser = db.prepare('SELECT referrer_id FROM users WHERE id = ?');
-    const user = getUser.get(user_id);
+    const getUser = db.prepare('SELECT referrer_id FROM users WHERE id = $1');
+    const user = await getUser.get(user_id);
     
     if (user && user.referrer_id) {
       const bonus = product.price * 0.05;
-      const updateReferrer = db.prepare('UPDATE users SET referral_earnings = referral_earnings + ? WHERE id = ?');
-      updateReferrer.run(bonus, user.referrer_id);
+      const updateReferrer = db.prepare('UPDATE users SET referral_earnings = referral_earnings + $1 WHERE id = $2');
+      await updateReferrer.run(bonus, user.referrer_id);
     }
     
-    res.json({ id: result.lastInsertRowid, message: 'Заказ создан успешно' });
+    res.json({ id: result.id, message: 'Заказ создан успешно' });
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({ error: 'Ошибка создания заказа' });
