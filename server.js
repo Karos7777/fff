@@ -324,7 +324,7 @@ initDB()
   });
 
 // Роут для авторизации через Telegram
-app.post('/api/auth/telegram', (req, res) => {
+app.post('/api/auth/telegram', async (req, res) => {
     console.log('\n👤 [SERVER AUTH] Запрос авторизации через Telegram');
     try {
         const { id, first_name, last_name, username } = req.body;
@@ -335,24 +335,54 @@ app.post('/api/auth/telegram', (req, res) => {
             return res.status(400).json({ error: 'ID пользователя не предоставлен' });
         }
         
-        // Проверяем, есть ли пользователь в базе
-        let getUser = db.prepare('SELECT * FROM users WHERE telegram_id = ?');
-        let user = getUser.get(id.toString());
+        // Проверяем, является ли пользователь админом
+        const adminIds = process.env.ADMIN_TELEGRAM_IDS ? 
+            process.env.ADMIN_TELEGRAM_IDS.split(',').map(id => id.trim()) : 
+            ADMIN_TELEGRAM_IDS;
+        const isAdmin = adminIds.includes(id.toString());
+        
+        console.log('🔐 [AUTH] Проверка админ прав:', { 
+            userId: id.toString(), 
+            adminIds, 
+            isAdmin 
+        });
+        
+        // Проверяем, есть ли пользователь в базе (async)
+        let getUser = db.prepare('SELECT * FROM users WHERE telegram_id = $1');
+        let user = await getUser.get(id.toString());
         
         // Если пользователя нет, создаем его
         if (!user) {
             const insertUser = db.prepare(`
-                INSERT INTO users (telegram_id, username, is_admin) 
-                VALUES (?, ?, ?)
+                INSERT INTO users (telegram_id, username, is_admin, first_name, last_name) 
+                VALUES ($1, $2, $3, $4, $5)
             `);
-            const result = insertUser.run(id.toString(), username || '', false);
+            const result = await insertUser.run(
+                id.toString(), 
+                username || '', 
+                isAdmin,
+                first_name || '',
+                last_name || ''
+            );
             
             user = {
                 id: result.lastInsertRowid,
                 telegram_id: id.toString(),
                 username: username || '',
-                is_admin: false
+                first_name: first_name || '',
+                last_name: last_name || '',
+                is_admin: isAdmin
             };
+            
+            console.log('✅ [AUTH] Создан новый пользователь:', user);
+        } else {
+            // Обновляем is_admin если изменился
+            if (user.is_admin !== isAdmin) {
+                const updateUser = db.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
+                await updateUser.run(isAdmin, user.id);
+                user.is_admin = isAdmin;
+                console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
+            }
         }
         
         // Создаем JWT токен
