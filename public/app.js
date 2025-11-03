@@ -901,14 +901,8 @@ function showMainContent() {
         applyTranslations();
     }, 100);
     
-    document.getElementById('userName').textContent = currentUser.username || 'Пользователь';
-
-    // Показываем админ-кнопку, если is_admin
-    if (currentUser.is_admin) {
-        document.getElementById('adminAddServiceContainer').style.display = 'block';
-    } else {
-        document.getElementById('adminAddServiceContainer').style.display = 'none';
-    }
+    // Используем showUserInfo() для отображения имени и админ кнопок
+    showUserInfo();
 }
 
 // Загрузка товаров
@@ -1427,32 +1421,52 @@ function hideLoading() {
 // Дублирующиеся функции удалены - используются версии выше
 
 function showUserInfo() {
-  if (!currentUser) return;
+  if (!currentUser) {
+    console.warn('⚠️ [USER INFO] currentUser не определён');
+    return;
+  }
+  
+  console.log('👤 [USER INFO] Отображение информации о пользователе:', currentUser);
+  console.log('👤 [USER INFO] is_admin:', currentUser.is_admin, 'isAdmin:', currentUser.isAdmin);
   
   document.getElementById('userInfo').style.display = 'flex';
   
   // Формируем отображаемое имя пользователя
   let displayName = '';
-  if (currentUser.first_name || currentUser.last_name) {
-    displayName = `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim();
+  if (currentUser.firstName || currentUser.first_name || currentUser.lastName || currentUser.last_name) {
+    const firstName = currentUser.firstName || currentUser.first_name || '';
+    const lastName = currentUser.lastName || currentUser.last_name || '';
+    displayName = `${firstName} ${lastName}`.trim();
   } else if (currentUser.username) {
     displayName = currentUser.username;
   } else {
     displayName = 'Пользователь';
   }
   
+  console.log('👤 [USER INFO] Отображаемое имя:', displayName);
   document.getElementById('userName').textContent = displayName;
 
   // Показываем кнопку "Мои заказы"
-  if (typeof showMyOrdersButton === 'function') {
-      showMyOrdersButton();
+  const myOrdersBtn = document.getElementById('myOrdersBtn');
+  if (myOrdersBtn) {
+    myOrdersBtn.style.display = 'block';
+    console.log('✅ [USER INFO] Кнопка "Мои заказы" показана');
   }
 
-  // Показываем админ-кнопку, если is_admin
-  if (currentUser.is_admin) {
-      document.getElementById('adminAddServiceContainer').style.display = 'block';
+  // Показываем админ-кнопку, если is_admin или isAdmin
+  const isAdmin = currentUser.is_admin || currentUser.isAdmin;
+  const adminContainer = document.getElementById('adminAddServiceContainer');
+  
+  if (adminContainer) {
+    if (isAdmin) {
+      adminContainer.style.display = 'block';
+      console.log('✅ [USER INFO] Админ кнопка показана (is_admin:', currentUser.is_admin, ')');
+    } else {
+      adminContainer.style.display = 'none';
+      console.log('ℹ️ [USER INFO] Админ кнопка скрыта (is_admin:', currentUser.is_admin, ')');
+    }
   } else {
-      document.getElementById('adminAddServiceContainer').style.display = 'none';
+    console.warn('⚠️ [USER INFO] Элемент adminAddServiceContainer не найден');
   }
 }
 
