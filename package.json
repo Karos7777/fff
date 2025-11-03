@@ -12,7 +12,9 @@
     "check-db": "node check-products.js",
     "clean-test": "node delete-test-products.js",
     "db:check": "node check-products.js",
-    "db:clean": "node delete-test-products.js"
+    "db:clean": "node delete-test-products.js",
+    "check-admin": "node check-admin-config.js",
+    "check-users": "node check-users-admin.js"
   },
   "dependencies": {
     "@ton/crypto": "^3.3.0",
