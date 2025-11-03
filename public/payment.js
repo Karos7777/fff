@@ -56,10 +56,19 @@ class PaymentManager {
   // Показ опций оплаты для заказа
   async showPaymentOptions(orderId, productId, productName, price) {
     try {
-      console.log('💳 [PAYMENT] showPaymentOptions:', { orderId, productId, productName, price });
+      console.log('💳 [PAYMENT] showPaymentOptions вызвана с параметрами:');
+      console.log('  - orderId:', orderId, typeof orderId);
+      console.log('  - productId:', productId, typeof productId);
+      console.log('  - productName:', productName);
+      console.log('  - price:', price);
       
-      if (!orderId || !productId) {
-        throw new Error('Отсутствует ID заказа или товара');
+      if (!orderId) {
+        console.error('❌ orderId отсутствует!');
+        throw new Error('ID заказа не передан');
+      }
+      if (!productId) {
+        console.error('❌ productId отсутствует!');
+        throw new Error('ID товара не передан');
       }
       const content = `
         <div class="payment-options">
@@ -102,8 +111,9 @@ class PaymentManager {
       
       this.showModal(content);
     } catch (error) {
-      console.error('Ошибка показа опций оплаты:', error);
-      this.showError('Ошибка загрузки способов оплаты');
+      console.error('❌ [PAYMENT] Ошибка показа опций оплаты:', error);
+      console.error('❌ [PAYMENT] Stack:', error.stack);
+      this.showError('Ошибка загрузки способов оплаты: ' + error.message);
     }
   }
 

@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.4.1';
+const APP_VERSION = '2.4.2';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1570,6 +1570,11 @@ async function orderProduct(productId) {
     }
 
     console.log('✅ [ORDER] Заказ создан:', data);
+    console.log('📎 [ORDER] Параметры для оплаты:');
+    console.log('  - data.id (orderId):', data.id, typeof data.id);
+    console.log('  - productId:', productId, typeof productId);
+    console.log('  - product.name:', product.name);
+    console.log('  - product.price:', product.price);
     
     // Показываем уведомление
     showSuccess('Заказ создан! Перейдите в "Мои заказы" для оплаты');
@@ -1586,6 +1591,7 @@ async function orderProduct(productId) {
 
     // Показываем опции оплаты
     if (window.paymentManager) {
+      console.log('👉 [ORDER] Вызов paymentManager.showPaymentOptions...');
       window.paymentManager.showPaymentOptions(
         data.id, 
         productId, 
