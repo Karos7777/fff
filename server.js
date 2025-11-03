@@ -420,6 +420,18 @@ app.post('/api/auth', (req, res) => {
       referrer_id = parseInt(ref, 10);
     }
     
+    // Проверяем, является ли пользователь админом
+    const adminIds = process.env.ADMIN_TELEGRAM_IDS ? 
+        process.env.ADMIN_TELEGRAM_IDS.split(',').map(id => id.trim()) : 
+        ADMIN_TELEGRAM_IDS;
+    const isAdmin = adminIds.includes(telegram_id.toString());
+    
+    console.log('🔐 [AUTH] Проверка админ прав:', { 
+        userId: telegram_id.toString(), 
+        adminIds, 
+        isAdmin 
+    });
+    
     // Ищем существующего пользователя
     const getUser = db.prepare('SELECT * FROM users WHERE telegram_id = ?');
     const user = getUser.get(telegram_id);
@@ -433,6 +445,14 @@ app.post('/api/auth', (req, res) => {
         user.last_name = last_name || user.last_name;
       }
       
+      // Обновляем is_admin если изменился
+      if (user.is_admin !== isAdmin) {
+        const updateAdminStatus = db.prepare('UPDATE users SET is_admin = ? WHERE id = ?');
+        updateAdminStatus.run(isAdmin, user.id);
+        user.is_admin = isAdmin;
+        console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
+      }
+      
       const token = generateToken(user);
       res.json({ 
         token, 
@@ -444,13 +464,14 @@ app.post('/api/auth', (req, res) => {
           last_name: user.last_name,
           is_admin: user.is_admin,
           isAdmin: user.is_admin,  // Добавляем camelCase для совместимости
+          role: user.is_admin ? 'admin' : 'user',
           referrer_id: user.referrer_id 
         } 
       });
     } else {
       // Создаем нового пользователя
-      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id) VALUES (?, ?, ?, ?, ?)');
-      const result = insertUser.run(telegram_id, username, first_name, last_name, referrer_id);
+      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id, is_admin) VALUES (?, ?, ?, ?, ?, ?)');
+      const result = insertUser.run(telegram_id, username, first_name, last_name, referrer_id, isAdmin);
       
       const newUser = {
         id: result.lastInsertRowid,
@@ -458,8 +479,10 @@ app.post('/api/auth', (req, res) => {
         username,
         first_name,
         last_name,
-        is_admin: false
+        is_admin: isAdmin
       };
+      
+      console.log('✅ [AUTH] Создан новый пользователь с is_admin:', isAdmin);
       
       const token = generateToken(newUser);
       res.json({ 
@@ -470,8 +493,9 @@ app.post('/api/auth', (req, res) => {
           username,
           first_name,
           last_name,
-          is_admin: false,
-          isAdmin: false,  // Добавляем camelCase для совместимости
+          is_admin: isAdmin,
+          isAdmin: isAdmin,  // Добавляем camelCase для совместимости
+          role: isAdmin ? 'admin' : 'user',
           referrer_id 
         } 
       });

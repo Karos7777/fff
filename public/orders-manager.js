@@ -1,10 +1,7 @@
 // Менеджер заказов и отзывов
 // Версия: 2.0.0
 
-// Глобальная переменная для заказов (если не определена в app.js)
-if (typeof orders === 'undefined') {
-    var orders = [];
-}
+// Используем глобальную переменную orders из app.js (window.orders)
 
 // Показать модальное окно с заказами
 async function showOrdersModal() {
