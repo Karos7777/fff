@@ -879,11 +879,16 @@ function showAuthSection() {
     document.getElementById('userInfo').style.display = 'none';
 }
 
-// Показать основной контент
 function showMainContent() {
     document.getElementById('authSection').style.display = 'none';
     document.getElementById('mainContent').style.display = 'block';
     document.getElementById('userInfo').style.display = 'flex';
+    
+    // Применяем переводы после показа контента
+    setTimeout(() => {
+        applyTranslations();
+    }, 100);
+    
     document.getElementById('userName').textContent = currentUser.username || 'Пользователь';
 
     // Показываем админ-кнопку, если is_admin
@@ -1407,15 +1412,7 @@ function hideLoading() {
   document.getElementById('loading').style.display = 'none';
 }
 
-function showAuthSection() {
-  document.getElementById('authSection').style.display = 'block';
-  document.getElementById('mainContent').style.display = 'none';
-}
-
-function showMainContent() {
-  document.getElementById('authSection').style.display = 'none';
-  document.getElementById('mainContent').style.display = 'block';
-}
+// Дублирующиеся функции удалены - используются версии выше
 
 function showUserInfo() {
   if (!currentUser) return;
