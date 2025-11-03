@@ -23,7 +23,9 @@ class PaymentService {
 
   async initPaymentTables() {
     try {
-      // Создаем таблицы для платежей (PostgreSQL синтаксис)
+      console.log('🔄 Инициализация таблиц платежей...');
+      
+      // Создаем таблицу invoices БЕЗ invoice_payload (добавим позже)
       await this.db.exec(`
         CREATE TABLE IF NOT EXISTS invoices (
           id SERIAL PRIMARY KEY,
@@ -34,8 +36,6 @@ class PaymentService {
           amount DECIMAL(10,2) NOT NULL,
           currency TEXT NOT NULL,
           status TEXT DEFAULT 'pending',
-          
-          invoice_payload TEXT UNIQUE NOT NULL,
           
           telegram_payment_charge_id TEXT,
           telegram_provider_payment_charge_id TEXT,
@@ -54,6 +54,17 @@ class PaymentService {
           FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
         )
       `);
+      
+      // Проверяем и добавляем колонку invoice_payload если её нет
+      try {
+        await this.db.exec(`
+          ALTER TABLE invoices 
+          ADD COLUMN IF NOT EXISTS invoice_payload TEXT UNIQUE
+        `);
+        console.log('✅ Колонка invoice_payload проверена/добавлена');
+      } catch (e) {
+        console.log('⚠️ Колонка invoice_payload уже существует или ошибка:', e.message);
+      }
 
       await this.db.exec(`
         CREATE TABLE IF NOT EXISTS transactions (
@@ -94,24 +105,52 @@ class PaymentService {
       `);
 
       // Добавляем колонки в orders если их нет (PostgreSQL синтаксис)
+      console.log('🔄 Проверка колонок в таблице orders...');
       try {
-        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT NULL');
-      } catch (e) { /* колонка уже существует */ }
+        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT');
+        console.log('✅ Колонка payment_method проверена');
+      } catch (e) { 
+        console.log('⚠️ payment_method:', e.message);
+      }
       
       try {
-        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS transaction_hash TEXT DEFAULT NULL');
-      } catch (e) { /* колонка уже существует */ }
+        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS transaction_hash TEXT');
+        console.log('✅ Колонка transaction_hash проверена');
+      } catch (e) { 
+        console.log('⚠️ transaction_hash:', e.message);
+      }
       
       try {
-        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS price DECIMAL(10,2) DEFAULT NULL');
-      } catch (e) { /* колонка уже существует */ }
+        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS price DECIMAL(10,2)');
+        console.log('✅ Колонка price проверена');
+      } catch (e) { 
+        console.log('⚠️ price:', e.message);
+      }
 
-      // Создаем индексы
-      await this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_payload ON invoices(invoice_payload)');
-      await this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)');
-      await this.db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_hash ON transactions(tx_hash)');
+      // Создаем индексы (только после того, как убедились что колонки существуют)
+      console.log('🔄 Создание индексов...');
+      try {
+        await this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_payload ON invoices(invoice_payload)');
+        console.log('✅ Индекс idx_invoices_payload создан');
+      } catch (e) {
+        console.log('⚠️ Индекс idx_invoices_payload:', e.message);
+      }
+      
+      try {
+        await this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)');
+        console.log('✅ Индекс idx_invoices_status создан');
+      } catch (e) {
+        console.log('⚠️ Индекс idx_invoices_status:', e.message);
+      }
+      
+      try {
+        await this.db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_hash ON transactions(tx_hash)');
+        console.log('✅ Индекс idx_transactions_hash создан');
+      } catch (e) {
+        console.log('⚠️ Индекс idx_transactions_hash:', e.message);
+      }
 
-      console.log('✅ Таблицы платежей инициализированы');
+      console.log('✅ Таблицы платежей инициализированы успешно');
     } catch (error) {
       console.error('❌ Ошибка инициализации таблиц платежей:', error);
       throw error;
