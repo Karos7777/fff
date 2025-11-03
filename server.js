@@ -956,7 +956,7 @@ app.delete('/api/admin/users/:id', adminMiddleware, (req, res) => {
 });
 
 // Создание продукта
-app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, res) => {
+app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (req, res) => {
   console.log('\n➕ [SERVER CREATE] ========== СОЗДАНИЕ ТОВАРА ==========');
   console.log('➕ [SERVER CREATE] Body:', req.body);
   console.log('➕ [SERVER CREATE] File:', req.file);
@@ -980,7 +980,7 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, r
     let stock = parseInt(req.body.stock);
     if (isNaN(stock)) stock = 0;
     
-    const infiniteStock = req.body.infinite_stock === 'on' || req.body.infinite_stock === 'true' ? 1 : 0;
+    const infiniteStock = req.body.infinite_stock === 'on' || req.body.infinite_stock === 'true';
     
     console.log('➕ [SERVER CREATE] Параметры товара:', {
       name: req.body.name,
@@ -992,10 +992,10 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, r
     
     const insertProduct = db.prepare(`
       INSERT INTO products (name, description, price, category, stock, infinite_stock, image_url, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+      VALUES (?, ?, ?, ?, ?, ?, ?, true)
     `);
     
-    const result = insertProduct.run(
+    const result = await insertProduct.run(
       req.body.name,
       req.body.description || '',
       price,
@@ -1006,6 +1006,11 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, r
     );
     
     console.log('✅ [SERVER CREATE] Товар создан, ID:', result.lastInsertRowid);
+    
+    // Проверяем что товар действительно в БД
+    const verifyProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    const createdProduct = await verifyProduct.get(result.lastInsertRowid);
+    console.log('✅ [SERVER CREATE] Проверка созданного товара:', createdProduct);
     console.log('➕ [SERVER CREATE] ========== КОНЕЦ СОЗДАНИЯ ==========\n');
     
     res.json({ success: true, message: 'Продукт создан успешно', id: result.lastInsertRowid });
@@ -1035,8 +1040,8 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), (req
     let stock = parseInt(req.body.stock);
     if (isNaN(stock)) stock = 0;
     
-    const infiniteStock = req.body.infinite_stock === 'on' || req.body.infinite_stock === 'true' ? 1 : 0;
-    const isActiveValue = req.body.is_active === 'on' || req.body.is_active === 'true' ? 1 : 0;
+    const infiniteStock = req.body.infinite_stock === 'on' || req.body.infinite_stock === 'true';
+    const isActiveValue = req.body.is_active === 'on' || req.body.is_active === 'true';
     
     let updateProduct;
     let params = [req.body.name, req.body.description, price, req.body.category, isActiveValue, stock, infiniteStock];
