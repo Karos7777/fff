@@ -1,6 +1,11 @@
 // Менеджер заказов и отзывов
 // Версия: 2.0.0
 
+// Глобальная переменная для заказов (если не определена в app.js)
+if (typeof orders === 'undefined') {
+    var orders = [];
+}
+
 // Показать модальное окно с заказами
 async function showOrdersModal() {
     console.log('📦 [ORDERS] Открытие модального окна заказов');
@@ -62,6 +67,12 @@ async function loadOrders() {
 
 // Отрисовка списка заказов
 function renderOrders() {
+    // Проверяем, что orders это массив
+    if (!Array.isArray(orders)) {
+        console.error('❌ [ORDERS] orders is not an array:', typeof orders);
+        orders = [];
+    }
+    
     console.log('📦 [ORDERS] Отрисовка заказов, количество:', orders.length);
     
     const container = document.getElementById('ordersContainer');

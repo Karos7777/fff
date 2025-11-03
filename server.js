@@ -453,7 +453,7 @@ app.post('/api/auth', (req, res) => {
 });
 
 // Получение списка товаров
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   console.log('\n📦 [SERVER LOAD] Запрос на получение списка товаров');
   console.log('📦 [SERVER LOAD] Query params:', req.query);
   
@@ -464,9 +464,9 @@ app.get('/api/products', (req, res) => {
     'Expires': '0'
   });
   try {
-    // Получаем все активные товары
-    const getProducts = db.prepare('SELECT * FROM products WHERE is_active = 1 ORDER BY created_at DESC');
-    const products = getProducts.all();
+    // Получаем все активные товары (PostgreSQL async)
+    const getProducts = db.prepare('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
+    const products = await getProducts.all();
     console.log('📦 [SERVER LOAD] Найдено товаров:', products.length);
     
     if (products.length === 0) {
@@ -475,9 +475,9 @@ app.get('/api/products', (req, res) => {
     
     // Для каждого товара считаем рейтинг и количество отзывов
     const productIds = products.map(p => p.id);
-    const placeholders = productIds.map(() => '?').join(',');
+    const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
     const getRatings = db.prepare(`SELECT product_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id IN (${placeholders}) GROUP BY product_id`);
-    const ratings = getRatings.all(...productIds);
+    const ratings = await getRatings.all(...productIds);
     
     // Создаем карту рейтингов
     const ratingMap = {};
@@ -497,7 +497,7 @@ app.get('/api/products', (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('❌ [SERVER LOAD] Ошибка получения товаров:', error);
-    res.status(500).json({ error: 'Ошибка получения товаров' });
+    res.status(500).json({ error: 'Ошибка получения товаров', details: error.message });
   }
 });
 
@@ -559,7 +559,7 @@ app.post('/api/orders', authMiddleware, (req, res) => {
 });
 
 // Получение заказов пользователя
-app.get('/api/orders', authMiddleware, (req, res) => {
+app.get('/api/orders', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     
@@ -574,15 +574,15 @@ app.get('/api/orders', authMiddleware, (req, res) => {
       FROM orders o 
       LEFT JOIN products p ON o.product_id = p.id 
       LEFT JOIN invoices i ON o.id = i.order_id
-      WHERE o.user_id = ? 
+      WHERE o.user_id = $1
       ORDER BY o.created_at DESC
     `);
-    const orders = getOrders.all(userId);
+    const orders = await getOrders.all(userId);
     
     res.json(orders);
   } catch (error) {
     console.error('Ошибка получения заказов:', error);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: 'Ошибка сервера', details: error.message });
   }
 });
 
