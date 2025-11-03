@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.2.8';
+const APP_VERSION = '2.3.2';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1575,16 +1575,16 @@ async function orderProduct(productId) {
     // Находим товар
     const product = products.find(p => p.id === productId);
     if (!product) {
-      alert('Товар не найден');
+      showError('Товар не найден');
       return;
     }
 
-    // Получаем токен (для тестирования используем сохраненный)
-    let token = localStorage.getItem('token');
+    // Получаем токен авторизации
+    const token = localStorage.getItem('authToken');
     if (!token) {
-      // Новый валидный токен для отладки
-      token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidGVsZWdyYW1faWQiOiIxMjM0NTY3ODkiLCJ1c2VybmFtZSI6InRlc3R1c2VyIiwicm9sZSI6InVzZXIiLCJpc19hZG1pbiI6MCwiaWF0IjoxNzYyMDU0MjI2LCJleHAiOjE3NjIxNDA2MjZ9.GWlW1f-SfKDQVRj6rct4FtfnCUVNMHj2k-yAoE9OUds';
-      localStorage.setItem('token', token);
+      showError('Необходима авторизация. Пожалуйста, авторизуйтесь заново');
+      showAuthSection();
+      return;
     }
 
     // Создаем заказ через реальный API
