@@ -43,6 +43,32 @@ const APP_VERSION = '2.4.7';
   } else {
     console.log('✅ [VERSION] Версия актуальна');
   }
+  
+  // Проверка токена на валидность (проверяем наличие id или telegram_id)
+  const token = localStorage.getItem('authToken');
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      console.log('🔍 [TOKEN] Проверка токена:', payload);
+      
+      if (!payload.id && !payload.telegram_id) {
+        console.warn('⚠️ [TOKEN] Токен устаревший (нет id и telegram_id). Очистка...');
+        localStorage.removeItem('authToken');
+        console.log('✅ [TOKEN] Старый токен удалён. Требуется повторная авторизация.');
+        
+        // Показываем уведомление пользователю
+        setTimeout(() => {
+          alert('Требуется повторная авторизация. Пожалуйста, перезагрузите страницу.');
+          location.reload();
+        }, 500);
+      } else {
+        console.log('✅ [TOKEN] Токен валидный');
+      }
+    } catch (e) {
+      console.error('❌ [TOKEN] Ошибка проверки токена:', e);
+      localStorage.removeItem('authToken');
+    }
+  }
 })();
 
 // Глобальные переменные
