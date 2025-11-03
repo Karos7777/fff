@@ -957,14 +957,23 @@ app.delete('/api/admin/users/:id', adminMiddleware, (req, res) => {
 
 // Создание продукта
 app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, res) => {
+  console.log('\n➕ [SERVER CREATE] ========== СОЗДАНИЕ ТОВАРА ==========');
+  console.log('➕ [SERVER CREATE] Body:', req.body);
+  console.log('➕ [SERVER CREATE] File:', req.file);
+  console.log('➕ [SERVER CREATE] User:', req.user);
+  
   try {
     const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+    console.log('➕ [SERVER CREATE] Image path:', imagePath);
+    
     if (!req.body.name || !req.body.price) {
+      console.error('❌ [SERVER CREATE] Отсутствуют обязательные поля');
       return res.status(400).json({ error: 'Name and price are required' });
     }
     
     let price = parseFloat(req.body.price);
     if (isNaN(price)) {
+      console.error('❌ [SERVER CREATE] Неверный формат цены');
       return res.status(400).json({ error: 'Invalid price format' });
     }
     
@@ -973,6 +982,14 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, r
     
     const infiniteStock = req.body.infinite_stock === 'on' || req.body.infinite_stock === 'true' ? 1 : 0;
     
+    console.log('➕ [SERVER CREATE] Параметры товара:', {
+      name: req.body.name,
+      price,
+      stock,
+      infiniteStock,
+      category: req.body.category
+    });
+    
     const insertProduct = db.prepare(`
       INSERT INTO products (name, description, price, category, stock, infinite_stock, image_url, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1)
@@ -980,18 +997,23 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), (req, r
     
     const result = insertProduct.run(
       req.body.name,
-      req.body.description,
+      req.body.description || '',
       price,
-      req.body.category,
+      req.body.category || 'other',
       stock,
       infiniteStock,
       imagePath
     );
     
+    console.log('✅ [SERVER CREATE] Товар создан, ID:', result.lastInsertRowid);
+    console.log('➕ [SERVER CREATE] ========== КОНЕЦ СОЗДАНИЯ ==========\n');
+    
     res.json({ success: true, message: 'Продукт создан успешно', id: result.lastInsertRowid });
   } catch (error) {
-    console.error('Error creating product:', error);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    console.error('❌ [SERVER CREATE] ОШИБКА:', error);
+    console.error('❌ [SERVER CREATE] Stack:', error.stack);
+    console.log('➕ [SERVER CREATE] ========== КОНЕЦ (ОШИБКА) ==========\n');
+    res.status(500).json({ error: 'Ошибка сервера', details: error.message });
   }
 });
 
@@ -1501,38 +1523,7 @@ app.get('/api/user/role', authMiddleware, (req, res) => {
 });
 
 // ===== ADMIN API ENDPOINTS =====
-
-// Создание товара (только для админов)
-app.post('/api/admin/products', adminMiddleware, (req, res) => {
-  try {
-    const { name, description, price, category } = req.body;
-    
-    if (!name || !price) {
-      return res.status(400).json({ error: 'Название и цена обязательны' });
-    }
-    
-    const insertProduct = db.prepare(`
-      INSERT INTO products (name, description, price, category, created_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `);
-    
-    const result = insertProduct.run(name, description || '', parseFloat(price), category || 'general');
-    
-    res.json({ 
-      success: true, 
-      product: {
-        id: result.lastInsertRowid,
-        name,
-        description,
-        price: parseFloat(price),
-        category
-      }
-    });
-  } catch (error) {
-    console.error('Ошибка создания товара:', error);
-    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
-  }
-});
+// Примечание: Эндпоинт POST /api/admin/products уже определён выше (строка 959) с поддержкой загрузки изображений
 
 // Удаление товара (только для админов)
 app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
