@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.4.7';
+const APP_VERSION = '2.4.8';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -53,14 +53,25 @@ const APP_VERSION = '2.4.7';
       
       if (!payload.id && !payload.telegram_id) {
         console.warn('⚠️ [TOKEN] Токен устаревший (нет id и telegram_id). Очистка...');
-        localStorage.removeItem('authToken');
-        console.log('✅ [TOKEN] Старый токен удалён. Требуется повторная авторизация.');
         
-        // Показываем уведомление пользователю
-        setTimeout(() => {
+        // Проверяем, не показывали ли мы уже это сообщение
+        const tokenCleanupShown = sessionStorage.getItem('tokenCleanupShown');
+        
+        if (!tokenCleanupShown) {
+          // Удаляем токен
+          localStorage.removeItem('authToken');
+          console.log('✅ [TOKEN] Старый токен удалён.');
+          
+          // Отмечаем, что показали сообщение
+          sessionStorage.setItem('tokenCleanupShown', 'true');
+          
+          // Показываем уведомление БЕЗ автоматической перезагрузки
           alert('Требуется повторная авторизация. Пожалуйста, перезагрузите страницу.');
-          location.reload();
-        }, 500);
+        } else {
+          // Если уже показывали - просто удаляем токен без alert
+          localStorage.removeItem('authToken');
+          console.log('✅ [TOKEN] Старый токен удалён (повторная проверка).');
+        }
       } else {
         console.log('✅ [TOKEN] Токен валидный');
       }

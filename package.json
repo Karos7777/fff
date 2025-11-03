@@ -1,6 +1,6 @@
 {
   "name": "tg-magazin-bot",
-  "version": "2.4.7",
+  "version": "2.4.8",
   "description": "Telegram мини-приложение магазин с админкой",
   "main": "server.js",
   "scripts": {
