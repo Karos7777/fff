@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.1.2';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -811,8 +811,10 @@ async function authenticateUser(telegramId, username, firstName, lastName) {
         console.log('👤 [AUTH] Сохранение токена и данных пользователя...');
         localStorage.setItem('authToken', data.token);
         currentUser = data.user;
+        window.currentUser = data.user; // Обновляем глобальную переменную
         localStorage.setItem('currentUser', JSON.stringify(data.user));
         console.log('✅ [AUTH] Данные сохранены. Текущий пользователь:', currentUser);
+        console.log('✅ [AUTH] is_admin:', currentUser.is_admin, 'isAdmin:', currentUser.isAdmin);
         
         // Показываем основной контент
         console.log('👤 [AUTH] Отображение основного контента...');
@@ -840,6 +842,9 @@ async function restoreSession(token) {
         if (savedUser) {
             try {
                 currentUser = JSON.parse(savedUser);
+                window.currentUser = currentUser; // Обновляем глобальную переменную
+                console.log('✅ [RESTORE] Восстановлен пользователь:', currentUser);
+                console.log('✅ [RESTORE] is_admin:', currentUser.is_admin, 'isAdmin:', currentUser.isAdmin);
             } catch (e) {
                 console.error('Ошибка парсинга сохраненного пользователя:', e);
             }

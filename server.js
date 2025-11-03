@@ -331,11 +331,13 @@ app.post('/api/auth/telegram', (req, res) => {
             user: {
                 id: user.id,
                 telegramId: user.telegram_id,
+                telegram_id: user.telegram_id,
                 firstName: first_name,
                 lastName: last_name,
                 username: user.username,
                 role: user.is_admin ? 'admin' : 'user',
-                isAdmin: user.is_admin
+                isAdmin: user.is_admin,
+                is_admin: user.is_admin  // Добавляем snake_case для совместимости
             }
         });
     } catch (error) {
@@ -377,7 +379,8 @@ app.post('/api/auth', (req, res) => {
           username: user.username,
           first_name: user.first_name,
           last_name: user.last_name,
-          is_admin: user.is_admin, 
+          is_admin: user.is_admin,
+          isAdmin: user.is_admin,  // Добавляем camelCase для совместимости
           referrer_id: user.referrer_id 
         } 
       });
@@ -404,7 +407,8 @@ app.post('/api/auth', (req, res) => {
           username,
           first_name,
           last_name,
-          is_admin: false, 
+          is_admin: false,
+          isAdmin: false,  // Добавляем camelCase для совместимости
           referrer_id 
         } 
       });
