@@ -18,21 +18,20 @@ class PaymentService {
       console.warn('⚠️  ВНИМАНИЕ: TON настройки не полные - криптоплатежи работать не будут!');
     }
     
-    // Инициализируем таблицы платежей
-    this.initPaymentTables();
+    // Таблицы будут инициализированы через вызов initPaymentTables() в server.js
   }
 
-  initPaymentTables() {
+  async initPaymentTables() {
     try {
-      // Создаем таблицы для платежей
-      this.db.exec(`
+      // Создаем таблицы для платежей (PostgreSQL синтаксис)
+      await this.db.exec(`
         CREATE TABLE IF NOT EXISTS invoices (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id SERIAL PRIMARY KEY,
           order_id INTEGER NOT NULL,
           user_id INTEGER NOT NULL,
           product_id INTEGER NOT NULL,
           
-          amount REAL NOT NULL,
+          amount DECIMAL(10,2) NOT NULL,
           currency TEXT NOT NULL,
           status TEXT DEFAULT 'pending',
           
@@ -46,19 +45,19 @@ class PaymentService {
           crypto_tx_hash TEXT,
           crypto_confirmations INTEGER DEFAULT 0,
           
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          paid_at DATETIME,
-          expires_at DATETIME,
+          created_at TIMESTAMP DEFAULT NOW(),
+          paid_at TIMESTAMP,
+          expires_at TIMESTAMP,
           
-          FOREIGN KEY (order_id) REFERENCES orders (id),
-          FOREIGN KEY (user_id) REFERENCES users (id),
-          FOREIGN KEY (product_id) REFERENCES products (id)
+          FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+          FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
         )
       `);
 
-      this.db.exec(`
+      await this.db.exec(`
         CREATE TABLE IF NOT EXISTS transactions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id SERIAL PRIMARY KEY,
           invoice_id INTEGER NOT NULL,
           
           type TEXT NOT NULL,
@@ -67,54 +66,50 @@ class PaymentService {
           tx_hash TEXT,
           from_address TEXT,
           to_address TEXT,
-          amount REAL NOT NULL,
-          fee REAL DEFAULT 0,
+          amount DECIMAL(10,2) NOT NULL,
+          fee DECIMAL(10,2) DEFAULT 0,
           
           block_number INTEGER,
           confirmations INTEGER DEFAULT 0,
           
           telegram_payment_id TEXT,
           
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          confirmed_at DATETIME,
+          created_at TIMESTAMP DEFAULT NOW(),
+          confirmed_at TIMESTAMP,
           
           metadata TEXT,
           
-          FOREIGN KEY (invoice_id) REFERENCES invoices (id)
+          FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE
         )
       `);
 
-      this.db.exec(`
+      await this.db.exec(`
         CREATE TABLE IF NOT EXISTS payment_settings (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id SERIAL PRIMARY KEY,
           key TEXT UNIQUE NOT NULL,
           value TEXT NOT NULL,
           description TEXT,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at TIMESTAMP DEFAULT NOW()
         )
       `);
 
-      // Добавляем колонки в orders если их нет
+      // Добавляем колонки в orders если их нет (PostgreSQL синтаксис)
       try {
-        this.db.exec('ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT NULL');
+        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT NULL');
       } catch (e) { /* колонка уже существует */ }
       
       try {
-        this.db.exec('ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT "unpaid"');
+        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS transaction_hash TEXT DEFAULT NULL');
       } catch (e) { /* колонка уже существует */ }
       
       try {
-        this.db.exec('ALTER TABLE orders ADD COLUMN total_amount REAL DEFAULT 0');
-      } catch (e) { /* колонка уже существует */ }
-      
-      try {
-        this.db.exec('ALTER TABLE orders ADD COLUMN currency TEXT DEFAULT "RUB"');
+        await this.db.exec('ALTER TABLE orders ADD COLUMN IF NOT EXISTS price DECIMAL(10,2) DEFAULT NULL');
       } catch (e) { /* колонка уже существует */ }
 
       // Создаем индексы
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_payload ON invoices(invoice_payload)');
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)');
-      this.db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_hash ON transactions(tx_hash)');
+      await this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_payload ON invoices(invoice_payload)');
+      await this.db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)');
+      await this.db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_hash ON transactions(tx_hash)');
 
       console.log('✅ Таблицы платежей инициализированы');
     } catch (error) {

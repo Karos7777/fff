@@ -302,21 +302,26 @@ async function initDB() {
   }
 }
 
-// Запускаем инициализацию (будет выполнено при старте сервера)
-initDB().catch(err => {
-  console.error('❌ Критическая ошибка при инициализации БД:', err);
-  process.exit(1);
-});
-
 // Инициализация сервиса платежей
 let paymentService;
-try {
-  paymentService = new PaymentService(db, BOT_TOKEN);
-  console.log('✅ Сервис платежей инициализирован');
-} catch (error) {
-  console.error('❌ Ошибка инициализации сервиса платежей:', error);
-  process.exit(1);
-}
+
+// Запускаем инициализацию (будет выполнено при старте сервера)
+initDB()
+  .then(async () => {
+    // После инициализации основных таблиц, инициализируем платежи
+    try {
+      paymentService = new PaymentService(db, BOT_TOKEN);
+      await paymentService.initPaymentTables();
+      console.log('✅ Сервис платежей инициализирован');
+    } catch (error) {
+      console.error('❌ Ошибка инициализации сервиса платежей:', error);
+      throw error;
+    }
+  })
+  .catch(err => {
+    console.error('❌ Критическая ошибка при инициализации:', err);
+    process.exit(1);
+  });
 
 // Роут для авторизации через Telegram
 app.post('/api/auth/telegram', (req, res) => {
