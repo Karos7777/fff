@@ -864,12 +864,24 @@ async function restoreSession(token) {
 
 // Обработка выхода
 function handleLogout() {
+    console.log('🚪 [LOGOUT] Выход из системы');
+    
+    // Очищаем данные
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentUser');
     currentUser = null;
+    window.currentUser = null;
     products = [];
     orders = [];
+    
+    // Показываем секцию авторизации
     showAuthSection();
+    
+    // Запускаем повторную авторизацию через Telegram
+    console.log('🔄 [LOGOUT] Запуск повторной авторизации...');
+    setTimeout(() => {
+        autoAuth();
+    }, 500);
 }
 
 // Показать секцию авторизации
