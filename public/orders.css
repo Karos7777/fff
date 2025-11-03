@@ -278,6 +278,22 @@
   transform: translateY(-2px);
 }
 
+.btn-delete-order {
+  background: var(--gray-500);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-delete-order:hover {
+  background: var(--gray-700);
+  transform: translateY(-2px);
+}
+
 /* Система рейтинга */
 .rating-input {
   display: flex;

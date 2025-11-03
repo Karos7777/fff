@@ -684,6 +684,64 @@ app.post('/api/reviews', authMiddleware, (req, res) => {
   }
 });
 
+// Удаление заказа из истории
+app.delete('/api/orders/:id', authMiddleware, (req, res) => {
+  console.log('\n🗑️ [ORDER DELETE] Запрос на удаление заказа');
+  try {
+    const orderId = parseInt(req.params.id);
+    const userId = req.user.id;
+    
+    console.log('🗑️ [ORDER DELETE] Order ID:', orderId, 'User ID:', userId);
+    
+    // Проверяем, что заказ принадлежит пользователю
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
+    const order = getOrder.get(orderId, userId);
+    
+    if (!order) {
+      console.error('❌ [ORDER DELETE] Заказ не найден');
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    console.log('🗑️ [ORDER DELETE] Найден заказ:', order);
+    
+    // Удаляем заказ и связанные данные в транзакции
+    const deleteTransaction = db.transaction(() => {
+      // Удаляем отзывы
+      const deleteReviews = db.prepare('DELETE FROM reviews WHERE order_id = ?');
+      const reviewsResult = deleteReviews.run(orderId);
+      console.log('🗑️ [ORDER DELETE] Удалено отзывов:', reviewsResult.changes);
+      
+      // Удаляем инвойсы
+      const deleteInvoices = db.prepare('DELETE FROM invoices WHERE order_id = ?');
+      const invoicesResult = deleteInvoices.run(orderId);
+      console.log('🗑️ [ORDER DELETE] Удалено инвойсов:', invoicesResult.changes);
+      
+      // Удаляем сам заказ
+      const deleteOrder = db.prepare('DELETE FROM orders WHERE id = ?');
+      const orderResult = deleteOrder.run(orderId);
+      console.log('🗑️ [ORDER DELETE] Удалено заказов:', orderResult.changes);
+      
+      return orderResult.changes > 0;
+    });
+    
+    const success = deleteTransaction();
+    
+    if (success) {
+      console.log('✅ [ORDER DELETE] Заказ успешно удалён');
+      res.json({ 
+        success: true, 
+        message: 'Заказ успешно удалён' 
+      });
+    } else {
+      console.error('❌ [ORDER DELETE] Не удалось удалить заказ');
+      res.status(500).json({ error: 'Не удалось удалить заказ' });
+    }
+  } catch (error) {
+    console.error('❌ [ORDER DELETE] Ошибка:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // АДМИНСКИЕ МАРШРУТЫ
 
 // Получение статистики для дашборда

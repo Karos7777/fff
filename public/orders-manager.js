@@ -148,6 +148,9 @@ function renderOrderCard(order) {
                         💳 Оплатить снова
                     </button>
                 ` : ''}
+                <button class="btn-delete-order" onclick="deleteOrder(${order.id})">
+                    🗑️ Удалить
+                </button>
             </div>
         </div>
     `;
@@ -441,6 +444,45 @@ function formatDate(dateString) {
     });
 }
 
+// Удаление заказа из истории
+async function deleteOrder(orderId) {
+    console.log('🗑️ [ORDERS] Удаление заказа:', orderId);
+    
+    if (!confirm('Вы уверены, что хотите удалить этот заказ из истории? Это действие необратимо.')) {
+        return;
+    }
+    
+    try {
+        showLoading();
+        
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`/api/orders/${orderId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Ошибка удаления заказа');
+        }
+        
+        console.log('✅ [ORDERS] Заказ удалён');
+        showSuccess('Заказ успешно удалён из истории');
+        
+        // Перезагружаем заказы
+        await loadOrders();
+        renderOrders();
+        
+    } catch (error) {
+        console.error('❌ [ORDERS] Ошибка удаления:', error);
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
 // Показать кнопку "Мои заказы" после авторизации
 function showMyOrdersButton() {
     const btn = document.getElementById('myOrdersBtn');
@@ -453,6 +495,7 @@ function showMyOrdersButton() {
 window.showOrdersModal = showOrdersModal;
 window.loadOrders = loadOrders;
 window.cancelOrder = cancelOrder;
+window.deleteOrder = deleteOrder;
 window.openReviewModal = openReviewModal;
 window.handleReviewSubmit = handleReviewSubmit;
 window.showMyOrdersButton = showMyOrdersButton;

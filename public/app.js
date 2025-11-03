@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1577,6 +1577,21 @@ async function orderProduct(productId) {
       throw new Error(data.error || 'Ошибка создания заказа');
     }
 
+    console.log('✅ [ORDER] Заказ создан:', data);
+    
+    // Показываем уведомление
+    showSuccess('Заказ создан! Перейдите в "Мои заказы" для оплаты');
+    
+    // Обновляем список заказов если окно открыто
+    if (document.getElementById('ordersModal').style.display === 'block') {
+      if (typeof loadOrders === 'function') {
+        await loadOrders();
+        if (typeof renderOrders === 'function') {
+          renderOrders();
+        }
+      }
+    }
+
     // Показываем опции оплаты
     if (window.paymentManager) {
       window.paymentManager.showPaymentOptions(
@@ -1586,11 +1601,14 @@ async function orderProduct(productId) {
         product.price
       );
     } else {
-      alert('Система платежей недоступна');
+      // Если нет менеджера платежей, открываем "Мои заказы"
+      if (typeof showOrdersModal === 'function') {
+        setTimeout(() => showOrdersModal(), 500);
+      }
     }
 
   } catch (error) {
-    console.error('Ошибка заказа:', error);
-    alert('Ошибка при создании заказа: ' + error.message);
+    console.error('❌ [ORDER] Ошибка заказа:', error);
+    showError('Ошибка при создании заказа: ' + error.message);
   }
 }
