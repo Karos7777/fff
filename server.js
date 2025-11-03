@@ -372,9 +372,9 @@ app.post('/api/auth/telegram', async (req, res) => {
         if (!user) {
             const insertUser = db.prepare(`
                 INSERT INTO users (telegram_id, username, is_admin, first_name, last_name) 
-                VALUES ($1, $2, $3, $4, $5)
+                VALUES ($1, $2, $3, $4, $5) RETURNING id
             `);
-            const result = await insertUser.run(
+            const result = await insertUser.get(
                 id.toString(), 
                 username || '', 
                 isAdmin,
@@ -383,7 +383,7 @@ app.post('/api/auth/telegram', async (req, res) => {
             );
             
             user = {
-                id: result.lastInsertRowid,
+                id: result.id,  // ← PostgreSQL возвращает id через RETURNING
                 telegram_id: id.toString(),
                 username: username || '',
                 first_name: first_name || '',
