@@ -539,11 +539,12 @@ app.get('/api/products', async (req, res) => {
       ratingMap[r.product_id] = r; 
     });
     
-    // Добавляем рейтинги к товарам
+    // Добавляем рейтинги к товарам и конвертируем типы для клиента
     const result = products.map(p => ({
       ...p,
-      rating: ratingMap[p.id]?.avg_rating || 0,
-      reviewsCount: ratingMap[p.id]?.reviews_count || 0
+      price: parseFloat(p.price), // Конвертируем DECIMAL в number
+      rating: parseFloat(ratingMap[p.id]?.avg_rating) || 0,
+      reviewsCount: parseInt(ratingMap[p.id]?.reviews_count) || 0
     }));
     
     console.log('✅ [SERVER LOAD] Отправка списка товаров:', result.length, 'шт.');
@@ -556,22 +557,23 @@ app.get('/api/products', async (req, res) => {
 });
 
 // Получение товара по ID
-app.get('/api/products/:id', (req, res) => {
+app.get('/api/products/:id', async (req, res) => {
   try {
-    const getProduct = db.prepare('SELECT * FROM products WHERE id = ? AND is_active = 1');
-    const product = getProduct.get(req.params.id);
+    const getProduct = db.prepare('SELECT * FROM products WHERE id = ? AND is_active = true');
+    const product = await getProduct.get(req.params.id);
     
     if (!product) {
       return res.status(404).json({ error: 'Товар не найден' });
     }
     
     const getRating = db.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id = ?');
-    const rating = getRating.get(product.id);
+    const rating = await getRating.get(product.id);
     
     res.json({
       ...product,
-      rating: rating?.avg_rating || 0,
-      reviewsCount: rating?.reviews_count || 0
+      price: parseFloat(product.price),
+      rating: parseFloat(rating?.avg_rating) || 0,
+      reviewsCount: parseInt(rating?.reviews_count) || 0
     });
   } catch (error) {
     console.error('Error getting product:', error);
