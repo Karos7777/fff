@@ -90,14 +90,14 @@ app.post('/api/test-order', (req, res) => {
   try {
     const { product_id, user_id = 1 } = req.body;
 
-    const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
     const product = getProduct.get(product_id);
     
     if (!product) {
       return res.status(400).json({ error: 'Товар не найден' });
     }
     
-    const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
+    const insertOrder = dbLegacy.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
     const result = insertOrder.run(user_id, product_id);
     
     res.json({ 
@@ -122,7 +122,7 @@ app.post('/api/test-stars-invoice', async (req, res) => {
     }
 
     // Проверяем существование заказа
-    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ?');
+    const getOrder = dbLegacy.prepare('SELECT * FROM orders WHERE id = ?');
     const order = getOrder.get(orderId);
     
     if (!order) {
@@ -161,7 +161,7 @@ app.post('/api/test-crypto-invoice', async (req, res) => {
     }
 
     // Проверяем существование заказа
-    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ?');
+    const getOrder = dbLegacy.prepare('SELECT * FROM orders WHERE id = ?');
     const order = getOrder.get(orderId);
     
     if (!order) {
@@ -318,12 +318,11 @@ async function initDB() {
     `);
 
     // Добавляем админа по умолчанию
-    const insertAdmin = db.prepare(`
+    await db.run(`
       INSERT INTO users (telegram_id, username, is_admin) 
       VALUES ($1, $2, $3)
       ON CONFLICT (telegram_id) DO NOTHING
-    `);
-    await insertAdmin.run('853232715', 'admin', true);
+    `, ['853232715', 'admin', true]);
     
     console.log('✅ База данных PostgreSQL инициализирована успешно');
   } catch (error) {
@@ -388,12 +387,12 @@ app.post('/api/auth/telegram', async (req, res) => {
         });
         
         // Проверяем, есть ли пользователь в базе (async)
-        let getUser = db.prepare('SELECT * FROM users WHERE telegram_id = $1');
+        let getUser = dbLegacy.prepare('SELECT * FROM users WHERE telegram_id = $1');
         let user = await getUser.get(id.toString());
         
         // Если пользователя нет, создаем его
         if (!user) {
-            const insertUser = db.prepare(`
+            const insertUser = dbLegacy.prepare(`
                 INSERT INTO users (telegram_id, username, is_admin, first_name, last_name) 
                 VALUES ($1, $2, $3, $4, $5) RETURNING id
             `);
@@ -418,7 +417,7 @@ app.post('/api/auth/telegram', async (req, res) => {
         } else {
             // Обновляем is_admin если изменился
             if (user.is_admin !== isAdmin) {
-                const updateUser = db.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
+                const updateUser = dbLegacy.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
                 await updateUser.run(isAdmin, user.id);
                 user.is_admin = isAdmin;
                 console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
@@ -480,13 +479,13 @@ app.post('/api/auth', async (req, res) => {
     });
     
     // Ищем существующего пользователя
-    const getUser = db.prepare('SELECT * FROM users WHERE telegram_id = $1');
+    const getUser = dbLegacy.prepare('SELECT * FROM users WHERE telegram_id = $1');
     const user = await getUser.get(telegram_id);
     
     if (user) {
       // Пользователь существует - обновляем данные если нужно
       if (first_name || last_name) {
-        const updateUser = db.prepare('UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3');
+        const updateUser = dbLegacy.prepare('UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3');
         await updateUser.run(first_name || user.first_name, last_name || user.last_name, user.id);
         user.first_name = first_name || user.first_name;
         user.last_name = last_name || user.last_name;
@@ -494,7 +493,7 @@ app.post('/api/auth', async (req, res) => {
       
       // Обновляем is_admin если изменился
       if (user.is_admin !== isAdmin) {
-        const updateAdminStatus = db.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
+        const updateAdminStatus = dbLegacy.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
         await updateAdminStatus.run(isAdmin, user.id);
         user.is_admin = isAdmin;
         console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
@@ -518,7 +517,7 @@ app.post('/api/auth', async (req, res) => {
       });
     } else {
       // Создаем нового пользователя
-      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id, is_admin) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id');
+      const insertUser = dbLegacy.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id, is_admin) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id');
       const result = await insertUser.get(telegram_id, username, first_name, last_name, referrer_id, isAdmin);
       
       const newUser = {
@@ -568,7 +567,7 @@ app.get('/api/products', async (req, res) => {
   });
   try {
     // Получаем все активные товары (PostgreSQL async)
-    const getProducts = db.prepare('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
+    const getProducts = dbLegacy.prepare('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
     const products = await getProducts.all();
     console.log('📦 [SERVER LOAD] Найдено товаров:', products.length);
     
@@ -579,7 +578,7 @@ app.get('/api/products', async (req, res) => {
     // Для каждого товара считаем рейтинг и количество отзывов
     const productIds = products.map(p => p.id);
     const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
-    const getRatings = db.prepare(`SELECT product_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id IN (${placeholders}) GROUP BY product_id`);
+    const getRatings = dbLegacy.prepare(`SELECT product_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id IN (${placeholders}) GROUP BY product_id`);
     const ratings = await getRatings.all(...productIds);
     
     // Создаем карту рейтингов
@@ -611,14 +610,14 @@ app.get('/api/products', async (req, res) => {
 // Получение товара по ID
 app.get('/api/products/:id', async (req, res) => {
   try {
-    const getProduct = db.prepare('SELECT * FROM products WHERE id = ? AND is_active = true');
+    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ? AND is_active = true');
     const product = await getProduct.get(req.params.id);
     
     if (!product) {
       return res.status(404).json({ error: 'Товар не найден' });
     }
     
-    const getRating = db.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id = ?');
+    const getRating = dbLegacy.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id = ?');
     const rating = await getRating.get(product.id);
     
     res.json({
@@ -652,7 +651,7 @@ app.post('/api/payments/crypto/check', authMiddlewareWithDB, async (req, res) =>
 // Получение ожидающих инвойсов (для отладки)
 app.get('/api/payments/crypto/pending', authMiddlewareWithDB, (req, res) => {
   try {
-    const getPendingInvoices = db.prepare(`
+    const getPendingInvoices = dbLegacy.prepare(`
       SELECT * FROM invoices 
       WHERE status = 'pending' 
       AND currency IN ('TON', 'USDT')
@@ -715,7 +714,7 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     console.log('🗑️ [SERVER DELETE] User:', req.user);
     
     // Проверяем, существует ли товар
-    const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
     const product = getProduct.get(productId);
     console.log('🗑️ [SERVER DELETE] Найден товар:', product);
     
@@ -725,7 +724,7 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     }
     
     // Проверяем, есть ли активные заказы у товара
-    const getActiveOrders = db.prepare(`
+    const getActiveOrders = dbLegacy.prepare(`
       SELECT COUNT(*) as count FROM orders 
       WHERE product_id = ? AND status IN ('pending', 'pending_crypto', 'paid')
     `);
@@ -733,16 +732,16 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     console.log('🗑️ [SERVER DELETE] Активных заказов:', activeOrders.count);
     
     // Удаляем связанные данные в правильном порядке (включая активные заказы)
-    const deleteOrders = db.prepare('DELETE FROM orders WHERE product_id = ?');
-    const deleteProduct = db.prepare('DELETE FROM products WHERE id = ?');
+    const deleteOrders = dbLegacy.prepare('DELETE FROM orders WHERE product_id = ?');
+    const deleteProduct = dbLegacy.prepare('DELETE FROM products WHERE id = ?');
     
     console.log('🗑️ [SERVER DELETE] Начало транзакции удаления...');
     
     // Выполняем удаление в транзакции
-    const deleteTransaction = db.transaction(() => {
+    const deleteTransaction = dbLegacy.transaction(() => {
       // Удаляем отзывы если таблица существует
       try {
-        const deleteReviews = db.prepare('DELETE FROM reviews WHERE product_id = ?');
+        const deleteReviews = dbLegacy.prepare('DELETE FROM reviews WHERE product_id = ?');
         const reviewsResult = deleteReviews.run(productId);
         console.log('🗑️ [SERVER DELETE] Удалено отзывов:', reviewsResult.changes);
       } catch (e) {
@@ -760,7 +759,7 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     console.log('✅ [SERVER DELETE] Транзакция успешно завершена');
     
     // Проверяем, что товар действительно удален
-    const verifyDelete = db.prepare('SELECT * FROM products WHERE id = ?');
+    const verifyDelete = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
     const stillExists = verifyDelete.get(productId);
     
     if (stillExists) {
@@ -787,7 +786,7 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
 // Получение всех товаров для админа
 app.get('/api/admin/products', adminMiddleware, (req, res) => {
   try {
-    const getProducts = db.prepare(`
+    const getProducts = dbLegacy.prepare(`
       SELECT 
         p.*,
         COUNT(o.id) as total_orders,
@@ -813,7 +812,7 @@ app.get('/api/payments/history', authMiddlewareWithDB, (req, res) => {
   try {
     const userId = req.user.id;
     
-    const getPayments = db.prepare(`
+    const getPayments = dbLegacy.prepare(`
       SELECT 
         i.*,
         o.status as order_status,
@@ -935,7 +934,7 @@ const startServer = async () => {
           const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
           
           // Находим все заказы старше 1 часа со статусом pending
-          const getExpiredOrders = db.prepare(`
+          const getExpiredOrders = dbLegacy.prepare(`
             SELECT * FROM orders 
             WHERE status IN ('pending', 'pending_crypto') 
             AND created_at < ?
@@ -946,7 +945,7 @@ const startServer = async () => {
           if (expiredOrders.length > 0) {
             console.log(`⏰ [CRON] Найдено истёкших заказов: ${expiredOrders.length}`);
             
-            const updateOrder = db.prepare('UPDATE orders SET status = ? WHERE id = ?');
+            const updateOrder = dbLegacy.prepare('UPDATE orders SET status = ? WHERE id = ?');
             
             expiredOrders.forEach(order => {
               updateOrder.run('expired', order.id);
