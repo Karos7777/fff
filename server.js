@@ -651,6 +651,8 @@ app.post('/api/orders', authMiddlewareWithDB, async (req, res) => {
     console.log('✅ [SERVER] Заказ создан, result:', result);
     console.log('✅ [SERVER] Заказ ID:', result.id);
     
+    const orderId = result.id;
+    
     // Начисляем 5% пригласившему
     const getUser = db.prepare('SELECT referrer_id FROM users WHERE id = $1');
     const user = await getUser.get(user_id);
@@ -661,7 +663,35 @@ app.post('/api/orders', authMiddlewareWithDB, async (req, res) => {
       await updateReferrer.run(bonus, user.referrer_id);
     }
     
-    res.json({ id: result.id, message: 'Заказ создан успешно' });
+    // Проверяем метод оплаты
+    const paymentMethod = req.body.payment_method || req.body.paymentMethod;
+    
+    // Если выбран TON - создаём инвойс
+    if (paymentMethod === 'ton' || paymentMethod === 'TON') {
+      console.log('[TON] Запуск создания инвойса для заказа:', orderId);
+      
+      const invoice = await paymentService.createCryptoInvoice(
+        orderId,
+        user_id,
+        product_id,
+        product.price_ton || product.price,
+        'TON'
+      );
+      
+      console.log('[TON] Инвойс создан:', invoice);
+      
+      return res.json({
+        success: true,
+        orderId: orderId,
+        invoice: invoice,
+        url: invoice.url,
+        qr: invoice.qr,
+        address: invoice.address,
+        amount: invoice.amount
+      });
+    }
+    
+    res.json({ id: orderId, message: 'Заказ создан успешно' });
   } catch (error) {
     console.error('❌ [SERVER] Error creating order:', error);
     console.error('❌ [SERVER] Error message:', error.message);
