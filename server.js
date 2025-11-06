@@ -308,7 +308,7 @@ async function initDB() {
         id SERIAL PRIMARY KEY,
         order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        amount DECIMAL(10,2) NOT NULL,
+        amount DECIMAL(20,9) NOT NULL,
         currency TEXT NOT NULL,
         status TEXT DEFAULT 'pending',
         payment_url TEXT,
@@ -316,6 +316,14 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    
+    // Миграция: изменяем тип amount для поддержки TON (до 9 знаков после запятой)
+    try {
+      await dbLegacy.exec(`ALTER TABLE invoices ALTER COLUMN amount TYPE DECIMAL(20,9)`);
+      console.log('✅ Миграция: колонка amount изменена на DECIMAL(20,9)');
+    } catch (e) {
+      console.log('⚠️ Миграция amount: уже выполнена или ошибка:', e.message);
+    }
 
     // Добавляем админа по умолчанию
     await db.run(`
