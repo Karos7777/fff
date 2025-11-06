@@ -325,6 +325,32 @@ async function initDB() {
       console.log('⚠️ Миграция amount: уже выполнена или ошибка:', e.message);
     }
 
+    // Миграция: добавляем колонку transaction_hash
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE invoices 
+        ADD COLUMN IF NOT EXISTS transaction_hash TEXT
+      `);
+      console.log('✅ Миграция: колонка transaction_hash добавлена');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('⚠️ Ошибка миграции transaction_hash:', e.message);
+      }
+    }
+
+    // Миграция: добавляем колонку paid_at
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE invoices 
+        ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP
+      `);
+      console.log('✅ Миграция: колонка paid_at добавлена');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('⚠️ Ошибка миграции paid_at:', e.message);
+      }
+    }
+
     // Добавляем админа по умолчанию
     await db.run(`
       INSERT INTO users (telegram_id, username, is_admin) 
