@@ -1580,6 +1580,43 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
   }
 });
 
+// Быстрая проверка статуса заказа (GET для фронта)
+app.get('/api/ton/check/:orderId', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    
+    console.log('[TON CHECK GET] Проверка статуса заказа:', { orderId, userId });
+    
+    // Проверяем статус заказа и инвойса
+    const getStatus = db.prepare(`
+      SELECT i.status as invoice_status, o.status as order_status 
+      FROM invoices i 
+      JOIN orders o ON i.order_id = o.id 
+      WHERE o.id = $1 AND o.user_id = $2
+    `);
+    const status = await getStatus.get(orderId, userId);
+    
+    if (!status) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    const isPaid = status.invoice_status === 'paid' || status.order_status === 'paid';
+    
+    console.log('[TON CHECK GET] Статус:', { orderId, isPaid, ...status });
+    
+    res.json({ 
+      paid: isPaid,
+      invoice_status: status.invoice_status,
+      order_status: status.order_status
+    });
+    
+  } catch (error) {
+    console.error('[TON CHECK GET] ❌ Ошибка:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Проверка TON платежей через API (вместо webhook)
 app.post('/api/ton/check-payment', authMiddlewareWithDB, async (req, res) => {
   try {

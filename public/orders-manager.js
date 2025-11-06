@@ -508,14 +508,16 @@ async function checkTonPayment(orderId) {
         console.log('[TON CHECK] Проверка оплаты заказа:', orderId);
         
         const token = localStorage.getItem('authToken');
-        const response = await fetch('/api/ton/check-payment', {
-            method: 'POST',
+        const response = await fetch(`/api/ton/check/${orderId}`, {
+            method: 'GET',
             headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ orderId })
+            }
         });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка проверки статуса');
+        }
         
         const data = await response.json();
         console.log('[TON CHECK] Ответ:', data);
@@ -525,12 +527,12 @@ async function checkTonPayment(orderId) {
             await loadOrders();
             renderOrders();
         } else {
-            showInfo(data.message || 'Оплата пока не найдена. Попробуйте через минуту.');
+            showInfo('Оплата пока не найдена. Polling проверит автоматически через 20 сек.');
         }
         
     } catch (error) {
         console.error('[TON CHECK] Ошибка:', error);
-        showError('Ошибка проверки оплаты');
+        showError('Ошибка проверки оплаты: ' + error.message);
     } finally {
         hideLoading();
     }
