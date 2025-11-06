@@ -876,7 +876,7 @@ app.post('/api/reviews', authMiddlewareWithDB, (req, res) => {
 });
 
 // Удаление заказа из истории
-app.delete('/api/orders/:id', authMiddlewareWithDB, (req, res) => {
+app.delete('/api/orders/:id', authMiddlewareWithDB, async (req, res) => {
   console.log('\n🗑️ [ORDER DELETE] Запрос на удаление заказа');
   try {
     const orderId = parseInt(req.params.id);
@@ -885,8 +885,8 @@ app.delete('/api/orders/:id', authMiddlewareWithDB, (req, res) => {
     console.log('🗑️ [ORDER DELETE] Order ID:', orderId, 'User ID:', userId);
     
     // Проверяем, что заказ принадлежит пользователю
-    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
-    const order = getOrder.get(orderId, userId);
+    const orderResult = await db.query('SELECT * FROM orders WHERE id = $1 AND user_id = $2', [orderId, userId]);
+    const order = orderResult.rows[0];
     
     if (!order) {
       console.error('❌ [ORDER DELETE] Заказ не найден');
@@ -895,37 +895,32 @@ app.delete('/api/orders/:id', authMiddlewareWithDB, (req, res) => {
     
     console.log('🗑️ [ORDER DELETE] Найден заказ:', order);
     
-    // Удаляем заказ и связанные данные в транзакции
-    const deleteTransaction = db.transaction(() => {
+    // Удаляем заказ и связанные данные в транзакции PostgreSQL
+    await db.query('BEGIN');
+    
+    try {
       // Удаляем отзывы
-      const deleteReviews = db.prepare('DELETE FROM reviews WHERE order_id = ?');
-      const reviewsResult = deleteReviews.run(orderId);
-      console.log('🗑️ [ORDER DELETE] Удалено отзывов:', reviewsResult.changes);
+      const reviewsResult = await db.query('DELETE FROM reviews WHERE order_id = $1', [orderId]);
+      console.log('🗑️ [ORDER DELETE] Удалено отзывов:', reviewsResult.rowCount);
       
       // Удаляем инвойсы
-      const deleteInvoices = db.prepare('DELETE FROM invoices WHERE order_id = ?');
-      const invoicesResult = deleteInvoices.run(orderId);
-      console.log('🗑️ [ORDER DELETE] Удалено инвойсов:', invoicesResult.changes);
+      const invoicesResult = await db.query('DELETE FROM invoices WHERE order_id = $1', [orderId]);
+      console.log('🗑️ [ORDER DELETE] Удалено инвойсов:', invoicesResult.rowCount);
       
       // Удаляем сам заказ
-      const deleteOrder = db.prepare('DELETE FROM orders WHERE id = ?');
-      const orderResult = deleteOrder.run(orderId);
-      console.log('🗑️ [ORDER DELETE] Удалено заказов:', orderResult.changes);
+      const orderDeleteResult = await db.query('DELETE FROM orders WHERE id = $1', [orderId]);
+      console.log('🗑️ [ORDER DELETE] Удалено заказов:', orderDeleteResult.rowCount);
       
-      return orderResult.changes > 0;
-    });
-    
-    const success = deleteTransaction();
-    
-    if (success) {
+      await db.query('COMMIT');
+      
       console.log('✅ [ORDER DELETE] Заказ успешно удалён');
       res.json({ 
         success: true, 
         message: 'Заказ успешно удалён' 
       });
-    } else {
-      console.error('❌ [ORDER DELETE] Не удалось удалить заказ');
-      res.status(500).json({ error: 'Не удалось удалить заказ' });
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
     }
   } catch (error) {
     console.error('❌ [ORDER DELETE] Ошибка:', error);
