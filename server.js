@@ -1572,6 +1572,62 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
   }
 });
 
+// Webhook для TON платежей
+app.post('/api/ton/webhook', async (req, res) => {
+  try {
+    const { address, amount, text, hash } = req.body;
+    
+    console.log('[TON WEBHOOK] Получено:', { address, amount, text, hash });
+    
+    if (!text || !text.startsWith('order_')) {
+      console.log('[TON WEBHOOK] Неверный payload:', text);
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+    
+    const orderId = parseInt(text.replace('order_', ''));
+    if (isNaN(orderId)) {
+      console.log('[TON WEBHOOK] Неверный order ID:', text);
+      return res.status(400).json({ error: 'Invalid order ID' });
+    }
+    
+    // Найти инвойс по payload
+    const getInvoice = db.prepare('SELECT * FROM invoices WHERE invoice_payload = $1 AND status = $2');
+    const invoice = await getInvoice.get(text, 'pending');
+    
+    if (!invoice) {
+      console.log('[TON WEBHOOK] Инвойс не найден или уже оплачен:', text);
+      return res.status(404).json({ error: 'Invoice not found or already paid' });
+    }
+    
+    console.log('[TON WEBHOOK] Инвойс найден:', invoice);
+    
+    // Проверить сумму (в нано-TON)
+    const expectedNano = Math.round(invoice.amount * 1_000_000_000);
+    const receivedNano = parseInt(amount);
+    
+    console.log('[TON WEBHOOK] Проверка суммы:', { expectedNano, receivedNano });
+    
+    if (receivedNano < expectedNano * 0.99) { // ±1% на комиссию
+      console.log('[TON WEBHOOK] Сумма слишком мала');
+      return res.status(400).json({ error: 'Amount too low', expected: expectedNano, received: receivedNano });
+    }
+    
+    // Обновить статусы
+    const updateInvoice = db.prepare('UPDATE invoices SET status = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2');
+    await updateInvoice.run('paid', invoice.id);
+    
+    const updateOrder = db.prepare('UPDATE orders SET status = $1 WHERE id = $2');
+    await updateOrder.run('paid', invoice.order_id);
+    
+    console.log('[TON WEBHOOK] ✅ ОПЛАТА ЗАСЧИТАНА:', { orderId: invoice.order_id, invoiceId: invoice.id, hash });
+    
+    res.json({ success: true, orderId: invoice.order_id });
+  } catch (error) {
+    console.error('[TON WEBHOOK] ❌ Ошибка:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+});
+
 // Ручная проверка криптоплатежей (для отладки)
 app.post('/api/payments/crypto/check', authMiddlewareWithDB, async (req, res) => {
   try {
