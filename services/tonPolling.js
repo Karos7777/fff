@@ -50,18 +50,39 @@ module.exports = () => {
 
       console.log(`[TON POLLING] Найдено ${data.result.length} транзакций`);
 
+      // Логируем все входящие транзакции для отладки
+      data.result.forEach((t, idx) => {
+        if (t.in_msg && t.in_msg.value && parseInt(t.in_msg.value) > 0) {
+          const amount = parseInt(t.in_msg.value) / 1e9;
+          const dest = t.in_msg.destination || 'unknown';
+          const msg = t.in_msg.message || '';
+          console.log(`[TON POLLING] TX ${idx + 1}: ${amount.toFixed(9)} TON → ${dest.slice(0, 20)}... | msg: "${msg}"`);
+        }
+      });
+
       // Проверяем каждый pending инвойс
       for (const inv of pending) {
         const expected = parseFloat(inv.amount);
         const min = expected * 0.9;
+        const payload = inv.invoice_payload || `order_${inv.order_id}`;
 
-        console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: ожидается ${expected} TON (мин: ${min.toFixed(6)} TON)`);
+        console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: ожидается ${expected} TON (мин: ${min.toFixed(6)} TON) | payload: "${payload}"`);
 
-        // Ищем входящую транзакцию с суммой >= min
-        const tx = data.result.find(t =>
-          t.in_msg?.destination === address &&
-          parseInt(t.in_msg?.value || 0) / 1e9 >= min
-        );
+        // Ищем входящую транзакцию с суммой >= min И правильным payload
+        const tx = data.result.find(t => {
+          if (!t.in_msg || !t.in_msg.value) return false;
+          
+          const txAmount = parseInt(t.in_msg.value) / 1e9;
+          const txMessage = t.in_msg.message || '';
+          const txDest = t.in_msg.destination || '';
+          
+          // Проверяем: сумма >= min И (адрес совпадает ИЛИ payload совпадает)
+          const amountMatch = txAmount >= min;
+          const addressMatch = txDest.includes(address.slice(0, 20)) || address.includes(txDest.slice(0, 20));
+          const payloadMatch = txMessage === payload;
+          
+          return amountMatch && (addressMatch || payloadMatch);
+        });
 
         if (tx) {
           const received = parseInt(tx.in_msg.value) / 1e9;
@@ -73,7 +94,7 @@ module.exports = () => {
 
           console.log(`✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id} | ${received.toFixed(6)} TON | hash: ${hash.slice(0, 16)}...`);
         } else {
-          console.log(`   ❌ Транзакция не найдена`);
+          console.log(`   ❌ Транзакция не найдена (проверьте адрес и payload)`);
         }
       }
     } catch (err) {
