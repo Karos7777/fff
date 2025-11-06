@@ -238,19 +238,22 @@ class PaymentService {
           RETURNING id, invoice_payload, payment_url
         `;
 
-        // Используем this.db напрямую
-        const insertInvoice = this.db.prepare(sql);
-        const result = await insertInvoice.get(
+        console.log('[TON INVOICE] SQL параметры:', [orderId, userId, amountParsed, currency, tonDeepLink, payload]);
+
+        // PostgreSQL: используем query напрямую
+        const result = await this.db.query(sql, [
           orderId,
           userId,
           amountParsed,
           currency,
           tonDeepLink,
           payload
-        );
+        ]);
+        
+        const invoice = result.rows[0];
 
         console.log('[TON INVOICE] УСПЕШНО:', {
-          id: result.id,
+          id: invoice.id,
           orderId,
           userId,
           amount: amountParsed,
@@ -260,8 +263,8 @@ class PaymentService {
         });
 
         return {
-          id: result.id,
-          invoiceId: result.id,
+          id: invoice.id,
+          invoiceId: invoice.id,
           orderId,
           userId,
           amount: amountParsed,
