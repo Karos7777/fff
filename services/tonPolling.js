@@ -55,14 +55,14 @@ module.exports = () => {
         if (t.in_msg && t.in_msg.value && parseInt(t.in_msg.value) > 0) {
           const amount = parseInt(t.in_msg.value) / 1e9;
           const dest = t.in_msg.destination?.address || 'unknown';
-          const msg = t.in_msg.decoded_body?.text || t.in_msg.message || '';
+          const msg = t.in_msg.msg || t.in_msg.decoded_body?.text || '';
           console.log(`[TON POLLING] TX ${idx + 1}: ${amount.toFixed(9)} TON → ${dest.slice(0, 20)}... | msg: "${msg}"`);
         }
       });
 
       for (const inv of pending) {
         const expected = parseFloat(inv.amount);
-        const payload = inv.invoice_payload; // "order_131"
+        const payload = inv.invoice_payload; // "ABC123"
         const minAmount = expected * 0.9;
 
         console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: payload: "${payload}" | сумма >= ${minAmount.toFixed(9)} TON`);
@@ -72,7 +72,7 @@ module.exports = () => {
           
           const txAmount = parseInt(t.in_msg.value) / 1e9;
           const txDest = t.in_msg.destination?.address || '';
-          const txMessage = t.in_msg.decoded_body?.text || t.in_msg.message || '';
+          const txMessage = t.in_msg.msg || t.in_msg.decoded_body?.text || '';
           
           // Проверяем: адрес совпадает И payload совпадает И сумма >= minAmount
           const addressMatch = txDest === address || txDest.includes(address.slice(0, 30));

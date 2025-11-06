@@ -215,7 +215,8 @@ class PaymentService {
       if (currency === 'TON') {
         const amountParsed = parseFloat(amount);
         const amountNano = Math.round(amountParsed * 1_000_000_000);
-        const payload = `order_${orderId}`;
+        // Генерируем рандомный payload из 8 символов (буквы + цифры)
+        const payload = Math.random().toString(36).substring(2, 10).toUpperCase();
         const address = process.env.TON_WALLET_ADDRESS?.trim();
 
         if (!orderId || !userId || !amountParsed || !address) {
