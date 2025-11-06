@@ -279,14 +279,42 @@ class PaymentManager {
     try {
       console.log('💎 [CRYPTO] initCryptoPayment:', { orderId, productId, price, productName, currency });
       
-      if (!orderId || !productId || !price || !currency) {
+      if (!productId || !currency) {
         throw new Error('Отсутствуют обязательные параметры');
       }
       
-      this.showLoading('Создание криптосчета...');
+      this.showLoading('Создание заказа с TON оплатой...');
       
-      // Конвертируем цену в криптовалюту для тестирования
-      // 1 рубль = 0.001 TON или 0.001 USDT (минимальные суммы для теста)
+      // НОВЫЙ ПОДХОД: Создаём заказ с payment_method
+      console.log('💎 [CRYPTO] Создание заказа с payment_method:', currency.toLowerCase());
+      
+      const orderResponse = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        },
+        body: JSON.stringify({
+          product_id: productId,
+          payment_method: currency.toLowerCase()  // 'ton' или 'usdt'
+        })
+      });
+      
+      const orderData = await orderResponse.json();
+      console.log('📦 [CRYPTO] Ответ создания заказа:', orderData);
+      
+      if (!orderResponse.ok) {
+        throw new Error(orderData.error || 'Ошибка создания заказа');
+      }
+      
+      // Если сервер вернул invoice с QR - показываем его
+      if (orderData.success && orderData.invoice) {
+        console.log('✅ [CRYPTO] Инвойс получен:', orderData.invoice);
+        this.showCryptoInvoice(orderData.invoice, currency);
+        return;
+      }
+      
+      // СТАРЫЙ ПОДХОД (fallback): Если заказ уже создан, создаём инвойс отдельно
       const cryptoAmount = currency === 'TON' ? 
         Math.max(price / 100, 0.001).toFixed(4) : 
         Math.max(price / 90, 0.001).toFixed(4);
@@ -300,7 +328,7 @@ class PaymentManager {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
-          orderId,
+          orderId: orderData.orderId || orderId,
           productId,
           amount: parseFloat(cryptoAmount),
           currency
@@ -569,6 +597,54 @@ class PaymentManager {
   }
 
   // Закрытие модального окна
+  // Показ криптоинвойса с QR-кодом
+  showCryptoInvoice(invoice, currency) {
+    console.log('💎 [CRYPTO] Показ инвойса:', invoice);
+    
+    const content = `
+      <div class="crypto-invoice">
+        <div class="invoice-header">
+          <div class="invoice-icon">💎</div>
+          <h3>Оплата ${currency}</h3>
+        </div>
+        
+        <div class="invoice-details">
+          <div class="invoice-amount">
+            <span class="label">Сумма:</span>
+            <span class="value">${invoice.amount} ${currency}</span>
+          </div>
+          
+          <div class="invoice-address">
+            <span class="label">Адрес:</span>
+            <span class="value address-text">${invoice.address}</span>
+          </div>
+        </div>
+        
+        <div class="qr-code-container">
+          <img src="${invoice.qr}" alt="QR Code" class="qr-code-image" />
+          <p class="qr-hint">Отсканируйте QR-код в вашем TON кошельке</p>
+        </div>
+        
+        <div class="invoice-actions">
+          <button class="btn btn-primary" onclick="window.open('${invoice.url}', '_blank')">
+            💎 Открыть в TON кошельке
+          </button>
+          <button class="btn btn-secondary" onclick="paymentManager.closeModal()">
+            Закрыть
+          </button>
+        </div>
+        
+        <div class="invoice-info">
+          <p>⏱️ После оплаты статус обновится автоматически</p>
+          <p>📦 Заказ #${invoice.orderId}</p>
+        </div>
+      </div>
+    `;
+    
+    this.showModal(content);
+    this.currentInvoice = invoice;
+  }
+
   closeModal() {
     if (this.paymentModal) {
       this.paymentModal.style.display = 'none';
