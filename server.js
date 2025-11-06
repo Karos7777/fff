@@ -1442,12 +1442,12 @@ app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req
         id: invoice.invoiceId,
         payload: invoice.payload,
         address: invoice.address,
-        memo: invoice.memo,
         amount: invoice.amount,
+        amountNano: invoice.amountNano,
         currency: invoice.currency,
         expiresAt: invoice.expiresAt,
         url: invoice.url,  // TON deep link
-        amountNano: invoice.amountNano
+        qr: invoice.qr     // QR-код URL
       }
     });
   } catch (error) {

@@ -212,8 +212,8 @@ class PaymentService {
       console.log('[TON INVOICE] Создание инвойса:', { orderId, userId, productId, amount, currency });
       
       // КРИТИЧНО: Проверяем обязательные параметры
-      if (!amount || !currency) {
-        throw new Error('Missing required parameters: amount or currency');
+      if (!orderId || !amount || !currency) {
+        throw new Error('Missing required parameters: orderId, amount, or currency');
       }
       
       if (!this.tonWalletAddress) {
@@ -221,66 +221,59 @@ class PaymentService {
       }
       
       const payload = `order_${orderId}`; // Уникальный payload для webhook
-      const memo = `ORDER_${orderId}_${Date.now().toString().slice(-6)}`; // Уникальный memo
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 минут
-      
-      // Определяем адрес получателя
-      let address;
-      if (currency === 'TON') {
-        address = this.tonWalletAddress;
-      } else if (currency === 'USDT') {
-        address = this.tonWalletAddress; // USDT на TON блокчейне
-      } else {
-        throw new Error('Неподдерживаемая валюта');
-      }
+      const address = this.tonWalletAddress;
       
       // Конвертируем в nano-TON для TON
-      let amountNano = amount;
-      if (currency === 'TON') {
-        amountNano = Math.round(parseFloat(amount) * 1_000_000_000);
-        console.log('[TON INVOICE] Amount in nano:', amountNano);
-      }
+      const amountNano = Math.round(parseFloat(amount) * 1_000_000_000);
+      console.log('[TON INVOICE] Amount in nano:', amountNano);
+      
+      // Генерируем TON URL для оплаты
+      const tonUrl = `ton://transfer/${address}?amount=${amountNano}&text=${encodeURIComponent(payload)}`;
+      
+      // Генерируем QR-код
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(tonUrl)}`;
+      
+      console.log('[TON INVOICE] Payment URL:', tonUrl);
+      console.log('[TON INVOICE] QR URL:', qrUrl);
 
-      // Сохраняем в БД с memo (PostgreSQL)
+      // Сохраняем в БД (PostgreSQL)
       const insertInvoice = this.db.prepare(`
         INSERT INTO invoices (
           order_id, user_id, product_id, amount, currency, status,
-          invoice_payload, crypto_address, crypto_memo, expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          invoice_payload, crypto_address, expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id
       `);
       
       const result = await insertInvoice.get(
         orderId, userId, productId, amount, currency, 'pending',
-        payload, address, memo, expiresAt.toISOString()
+        payload, address, expiresAt.toISOString()
       );
 
       console.log(`✅ Создан крипто инвойс #${result.id}:`);
       console.log(`   - Заказ: #${orderId}`);
-      console.log(`   - Сумма: ${amount} ${currency}`);
-      console.log(`   - Memo: ${memo}`);
+      console.log(`   - Сумма: ${amount} ${currency} (${amountNano} nano)`);
+      console.log(`   - Payload: ${payload}`);
       console.log(`   - Адрес: ${address}`);
+      console.log(`   - URL: ${tonUrl}`);
       console.log(`   - Истекает: ${expiresAt.toLocaleString()}`);
-      
-      // Генерируем TON URL для оплаты
-      const tonUrl = `ton://transfer/${address}?amount=${amountNano}&text=${encodeURIComponent(memo)}`;
-      
-      console.log('[TON INVOICE] Payment URL:', tonUrl);
 
       return {
         invoiceId: result.id,
         payload,
         address,
-        memo,
-        amount,
+        amount: parseFloat(amount),
+        amountNano,
         currency,
         expiresAt,
         orderId,
         url: tonUrl,  // TON deep link
-        amountNano: currency === 'TON' ? amountNano : null
+        qr: qrUrl     // QR-код URL
       };
     } catch (error) {
       console.error('❌ Ошибка создания крипто инвойса:', error);
+      console.error('❌ Детали:', error.message);
       throw error;
     }
   }
