@@ -2,7 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const PostgresAdapter = require('./db-postgres');
+const db = require('./db'); // ← Новый универсальный адаптер
+const PostgresAdapter = require('./db-postgres'); // ← Оставляем для совместимости со старым кодом
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -209,10 +210,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Инициализация базы данных PostgreSQL
-const db = new PostgresAdapter(process.env.DATABASE_URL);
+// db уже импортирован из ./db/index.js выше
+const dbLegacy = new PostgresAdapter(process.env.DATABASE_URL); // ← Старый адаптер для совместимости
 
 // Создаём экземпляр authMiddleware с доступом к db
-const authMiddlewareWithDB = authMiddleware(db);
+const authMiddlewareWithDB = authMiddleware(dbLegacy); // ← Используем старый для middleware
 
 // Функция для создания таблиц PostgreSQL
 async function initDB() {
@@ -220,7 +222,7 @@ async function initDB() {
     console.log('🔄 Инициализация базы данных PostgreSQL...');
     
     // Таблица пользователей
-    await db.exec(`
+    await dbLegacy.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         telegram_id BIGINT UNIQUE NOT NULL,
@@ -235,7 +237,7 @@ async function initDB() {
     `);
 
     // Таблица товаров
-    await db.exec(`
+    await dbLegacy.exec(`
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -256,13 +258,13 @@ async function initDB() {
     
     // Добавляем колонку file_path если её нет
     try {
-      await db.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
+      await dbLegacy.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
     } catch (e) {
       // Колонка уже существует
     }
 
     // Таблица отзывов
-    await db.exec(`
+    await dbLegacy.exec(`
       CREATE TABLE IF NOT EXISTS reviews (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -275,7 +277,7 @@ async function initDB() {
     
     // Миграция: добавляем новые колонки цен если их нет
     try {
-      await db.exec(`
+      await dbLegacy.exec(`
         ALTER TABLE products 
         ADD COLUMN IF NOT EXISTS price_ton DECIMAL(10,4),
         ADD COLUMN IF NOT EXISTS price_usdt DECIMAL(10,4),
@@ -287,7 +289,7 @@ async function initDB() {
     }
     
     // Таблица заказов
-    await db.exec(`
+    await dbLegacy.exec(`
       CREATE TABLE IF NOT EXISTS orders (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -301,7 +303,7 @@ async function initDB() {
     `);
 
     // Таблица инвойсов (для платежей)
-    await db.exec(`
+    await dbLegacy.exec(`
       CREATE TABLE IF NOT EXISTS invoices (
         id SERIAL PRIMARY KEY,
         order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,

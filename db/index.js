@@ -39,6 +39,16 @@ const db = {
     return result.rows;
   },
 
+  // Выполнить SQL без параметров (для CREATE TABLE и т.д.)
+  async exec(text) {
+    const client = await pool.connect();
+    try {
+      await client.query(text);
+    } finally {
+      client.release();
+    }
+  },
+
   // Прямой доступ к pool для специальных случаев
   pool
 };
