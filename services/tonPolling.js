@@ -1,5 +1,6 @@
 // TON Polling Service
-// Автоматическая проверка оплаты TON транзакций каждые 10 секунд
+// Автоматическая проверка оплаты TON транзакций каждые 8 секунд
+// ФИНАЛЬНАЯ ВЕРСИЯ: проверка по СУММЕ + PAYLOAD
 
 const db = require('../db');
 
@@ -11,96 +12,93 @@ module.exports = () => {
     return;
   }
   
-  console.log('💎 Запуск TON polling для проверки оплаты (каждые 10 секунд)');
+  console.log('💎 Запуск TON polling для проверки оплаты (каждые 8 секунд)');
   console.log('💎 Адрес кошелька:', address);
   
+  // === АВТОПОДТВЕРЖДЕНИЕ ПО SUM + PAYLOAD ===
   setInterval(async () => {
     console.log('[TON POLLING] Запуск проверки...');
-    
+
     try {
-      // Получаем pending инвойсы (PostgreSQL)
-      const pendingResult = await db.query(`
-        SELECT i.id, i.order_id, i.amount, i.invoice_payload, o.id as orderId
-        FROM invoices i
-        JOIN orders o ON i.order_id = o.id
-        WHERE i.status = $1 AND i.currency = $2
-      `, ['pending', 'TON']);
-      
+      const pendingResult = await db.query(
+        `SELECT i.id, i.order_id, i.amount, i.invoice_payload, o.id AS orderId
+         FROM invoices i
+         JOIN orders o ON i.order_id = o.id
+         WHERE i.status = 'pending' AND i.currency = 'TON'`
+      );
+
       const pending = pendingResult.rows;
 
       if (!pending || pending.length === 0) {
-        console.log('[TON POLLING] Нет ожидающих TON-заказов');
+        console.log('[TON POLLING] Нет ожидающих заказов');
         return;
       }
 
       const orderIds = pending.map(p => `#${p.order_id}`).join(', ');
       console.log(`[TON POLLING] Проверяем ${pending.length} заказов: ${orderIds}`);
 
-      // Динамический импорт fetch
-      const fetch = (await import('node-fetch')).default;
-      
-      const url = `https://toncenter.com/api/v2/getTransactions?address=${address}&limit=10`;
+      // Используем TON API v2 для более надёжного получения транзакций
+      const url = `https://tonapi.io/v2/blockchain/accounts/${address}/transactions?limit=20`;
+      const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
       const res = await fetch(url);
       const data = await res.json();
 
-      if (!data.ok || !data.result) {
-        console.log('[TON POLLING] TON Center не вернул транзакции');
+      if (!data.transactions || data.transactions.length === 0) {
+        console.log('[TON POLLING] Нет транзакций');
         return;
       }
 
-      console.log(`[TON POLLING] Найдено ${data.result.length} транзакций`);
+      console.log(`[TON POLLING] Найдено ${data.transactions.length} транзакций`);
 
       // Логируем все входящие транзакции для отладки
-      data.result.forEach((t, idx) => {
+      data.transactions.forEach((t, idx) => {
         if (t.in_msg && t.in_msg.value && parseInt(t.in_msg.value) > 0) {
           const amount = parseInt(t.in_msg.value) / 1e9;
-          const dest = t.in_msg.destination || 'unknown';
-          const msg = t.in_msg.message || '';
+          const dest = t.in_msg.destination?.address || 'unknown';
+          const msg = t.in_msg.decoded_body?.text || t.in_msg.message || '';
           console.log(`[TON POLLING] TX ${idx + 1}: ${amount.toFixed(9)} TON → ${dest.slice(0, 20)}... | msg: "${msg}"`);
         }
       });
 
-      // Проверяем каждый pending инвойс
       for (const inv of pending) {
         const expected = parseFloat(inv.amount);
-        const min = expected * 0.9;
-        const payload = inv.invoice_payload || `order_${inv.order_id}`;
+        const payload = inv.invoice_payload; // "order_131"
+        const minAmount = expected * 0.9;
 
-        console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: ожидается ${expected} TON (мин: ${min.toFixed(6)} TON) | payload: "${payload}"`);
+        console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: payload: "${payload}" | сумма >= ${minAmount.toFixed(9)} TON`);
 
-        // Ищем входящую транзакцию с суммой >= min И правильным payload
-        const tx = data.result.find(t => {
+        const tx = data.transactions.find(t => {
           if (!t.in_msg || !t.in_msg.value) return false;
           
           const txAmount = parseInt(t.in_msg.value) / 1e9;
-          const txMessage = t.in_msg.message || '';
-          const txDest = t.in_msg.destination || '';
+          const txDest = t.in_msg.destination?.address || '';
+          const txMessage = t.in_msg.decoded_body?.text || t.in_msg.message || '';
           
-          // Проверяем: сумма >= min И (адрес совпадает ИЛИ payload совпадает)
-          const amountMatch = txAmount >= min;
-          const addressMatch = txDest.includes(address.slice(0, 20)) || address.includes(txDest.slice(0, 20));
+          // Проверяем: адрес совпадает И payload совпадает И сумма >= minAmount
+          const addressMatch = txDest === address || txDest.includes(address.slice(0, 30));
           const payloadMatch = txMessage === payload;
+          const amountMatch = txAmount >= minAmount;
           
-          return amountMatch && (addressMatch || payloadMatch);
+          return addressMatch && payloadMatch && amountMatch;
         });
 
         if (tx) {
-          const received = parseInt(tx.in_msg.value) / 1e9;
-          const hash = tx.transaction_id?.hash || 'unknown';
+          const receivedAmount = parseInt(tx.in_msg.value) / 1e9;
+          const hash = tx.hash || 'unknown';
           
-          // PostgreSQL: используем query
-          await db.query(`UPDATE invoices SET status = $1, transaction_hash = $2, paid_at = CURRENT_TIMESTAMP WHERE id = $3`, ['paid', hash, inv.id]);
-          await db.query(`UPDATE orders SET status = $1 WHERE id = $2`, ['paid', inv.order_id]);
+          await db.run(`UPDATE invoices SET status = 'paid', transaction_hash = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2`, [hash, inv.id]);
+          await db.run(`UPDATE orders SET status = 'paid' WHERE id = $1`, [inv.order_id]);
 
-          console.log(`✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id} | ${received.toFixed(6)} TON | hash: ${hash.slice(0, 16)}...`);
+          console.log(`✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id} | payload: "${payload}" | сумма: ${receivedAmount.toFixed(9)} TON | hash: ${hash.slice(0, 16)}...`);
         } else {
-          console.log(`   ❌ Транзакция не найдена (проверьте адрес и payload)`);
+          console.log(`   ❌ Транзакция не найдена (проверьте payload: "${payload}")`);
         }
       }
     } catch (err) {
       console.error('[TON POLLING] ❌ Ошибка:', err.message);
+      console.error('[TON POLLING] Stack:', err.stack);
     }
-  }, 10000); // каждые 10 секунд
+  }, 8000); // каждые 8 секунд
   
   console.log('✅ TON Polling сервис запущен');
 };
