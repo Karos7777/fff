@@ -2089,11 +2089,11 @@ const startServer = async () => {
         }
       });
       
-      // === БЕЗОПАСНЫЙ TON POLLING (каждые 20 секунд) ===
+      // === ДЕБАГ TON POLLING (каждые 10 секунд) ===
       if (!process.env.TON_WALLET_ADDRESS) {
         console.warn('⚠️  TON_WALLET_ADDRESS не задан - TON polling отключён');
       } else {
-        console.log('💎 Запуск TON polling для проверки оплаты (каждые 20 секунд)');
+        console.log('💎 Запуск TON polling для проверки оплаты (каждые 10 секунд)');
         
         setInterval(async () => {
           try {
@@ -2114,10 +2114,10 @@ const startServer = async () => {
 
             console.log(`[TON POLLING] Проверка ${pending.length} ожидающих инвойсов...`);
 
-            // Динамический импорт fetch (безопасно для Node.js)
+            // Динамический импорт fetch
             const fetch = (await import('node-fetch')).default;
             
-            const url = `https://toncenter.com/api/v2/getTransactions?address=${address}&limit=20`;
+            const url = `https://toncenter.com/api/v2/getTransactions?address=${address}&limit=10`;
             const res = await fetch(url);
             const data = await res.json();
 
@@ -2126,14 +2126,30 @@ const startServer = async () => {
               return;
             }
 
+            console.log(`[TON POLLING] Найдено ${data.result.length} транзакций на кошельке`);
+
+            // ДЕБАГ: Выводим ВСЕ транзакции
+            for (const tx of data.result) {
+              if (!tx.in_msg || !tx.in_msg.value) continue;
+
+              const value = parseInt(tx.in_msg.value);
+              const source = tx.in_msg.source || 'empty';
+              const dest = tx.in_msg.destination || 'empty';
+              const hash = tx.transaction_id?.hash || 'no-hash';
+
+              console.log(`[TON TX] ${(value / 1e9).toFixed(6)} TON | от: ${source.substring(0, 10)}... → ${dest.substring(0, 10)}... | hash: ${hash.substring(0, 10)}...`);
+            }
+
+            // Проверяем каждый pending инвойс
             for (const inv of pending) {
               const expectedNano = Math.round(parseFloat(inv.amount) * 1_000_000_000);
-              const minAcceptable = Math.round(expectedNano * 0.95); // Минимум 95% от суммы (учитываем комиссию)
+              const minAcceptable = Math.round(expectedNano * 0.9); // Минимум 90% (допуск 10%)
+
+              console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: ожидается ${expectedNano} nanoTON (мин: ${minAcceptable})`);
 
               // Ищем входящую транзакцию с суммой >= minAcceptable
               const tx = data.result.find(t =>
                 t.in_msg && 
-                t.in_msg.source !== '' && 
                 t.in_msg.destination === address &&
                 parseInt(t.in_msg.value) >= minAcceptable
               );
@@ -2153,16 +2169,20 @@ const startServer = async () => {
                   invoiceId: inv.id,
                   txHash: tx.transaction_id.hash,
                   receivedNano: received,
+                  receivedTON: (received / 1e9).toFixed(6),
                   expectedNano: expectedNano,
                   difference: difference + '%',
                   minAcceptable: minAcceptable
                 });
+              } else {
+                console.log(`[TON POLLING] ❌ Транзакция для заказа #${inv.order_id} не найдена`);
               }
             }
           } catch (err) {
             console.error('[TON POLLING] ❌ Ошибка:', err.message);
+            console.error(err.stack);
           }
-        }, 20000); // каждые 20 секунд
+        }, 10000); // каждые 10 секунд
       }
     });
   } catch (error) {
