@@ -98,6 +98,39 @@ module.exports = (authMiddleware) => {
     }
   });
   
+  // Проверка статуса заказа (для автообновления на клиенте)
+  router.get('/:id/status', authMiddleware, async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      const userId = req.user.id;
+
+      const result = await db.query(`
+        SELECT o.status, o.id, i.status as invoice_status
+        FROM orders o
+        LEFT JOIN invoices i ON o.id = i.order_id
+        WHERE o.id = $1 AND o.user_id = $2
+      `, [orderId, userId]);
+
+      const order = result.rows[0];
+
+      if (!order) {
+        return res.status(404).json({ error: 'Заказ не найден' });
+      }
+
+      const paid = order.status === 'paid' || order.invoice_status === 'paid';
+
+      res.json({ 
+        paid,
+        status: order.status,
+        invoice_status: order.invoice_status
+      });
+
+    } catch (error) {
+      console.error('[ORDER STATUS] Ошибка:', error);
+      res.status(500).json({ error: 'Ошибка сервера' });
+    }
+  });
+
   // Удаление заказа
   router.delete('/:id', authMiddleware, async (req, res) => {
     const orderId = parseInt(req.params.id);

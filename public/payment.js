@@ -53,6 +53,11 @@ class PaymentManager {
     }
   }
 
+  // Alias для совместимости с orders-manager.js
+  async showPaymentModal(orderId, productId, productName, price) {
+    return this.showPaymentOptions(orderId, productId, productName, price);
+  }
+
   // Показ опций оплаты для заказа
   async showPaymentOptions(orderId, productId, productName, price) {
     try {
@@ -499,6 +504,90 @@ class PaymentManager {
     }, 5000); // Проверяем каждые 5 секунд
   }
 
+  // Автопроверка статуса заказа (для TON/USDT)
+  async startOrderStatusCheck(orderId) {
+    console.log('🔄 [AUTO-CHECK] Запуск автопроверки для заказа #' + orderId);
+    
+    if (this.statusCheckInterval) {
+      clearInterval(this.statusCheckInterval);
+    }
+
+    this.statusCheckInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/orders/${orderId}/status`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          }
+        });
+
+        if (!response.ok) {
+          console.error('❌ [AUTO-CHECK] Ошибка ответа:', response.status);
+          return;
+        }
+
+        const data = await response.json();
+        console.log('🔄 [AUTO-CHECK] Статус заказа:', data);
+        
+        if (data.paid) {
+          console.log('✅ [AUTO-CHECK] ОПЛАТА ПОДТВЕРЖДЕНА!');
+          clearInterval(this.statusCheckInterval);
+          this.showOrderPaidSuccess(orderId);
+        }
+      } catch (error) {
+        console.error('❌ [AUTO-CHECK] Ошибка проверки статуса:', error);
+      }
+    }, 5000); // Проверяем каждые 5 секунд
+  }
+
+  // Показ успешной оплаты заказа
+  showOrderPaidSuccess(orderId) {
+    const statusContainer = document.getElementById('paymentStatusContainer');
+    if (statusContainer) {
+      statusContainer.innerHTML = `
+        <div class="status-success">
+          ✅ Оплата подтверждена!
+        </div>
+      `;
+    }
+
+    // Показываем кнопку скачивания
+    const content = `
+      <div class="payment-success">
+        <div class="success-icon">🎉</div>
+        <h3>Оплата успешна!</h3>
+        
+        <div class="success-details">
+          <p>Ваш платеж был успешно обработан.</p>
+          <p>Заказ #${orderId} оплачен!</p>
+        </div>
+        
+        <div class="success-actions">
+          <button class="btn btn-primary" onclick="paymentManager.downloadFile(${orderId})">
+            📥 Скачать файл
+          </button>
+          <button class="btn btn-secondary" onclick="paymentManager.closeModal(); window.location.reload();">
+            Закрыть
+          </button>
+        </div>
+      </div>
+    `;
+    
+    this.showModal(content);
+  }
+
+  // Скачивание файла заказа
+  async downloadFile(orderId) {
+    try {
+      const token = localStorage.getItem('authToken');
+      const downloadUrl = `/api/orders/${orderId}/download?token=${encodeURIComponent(token)}`;
+      window.open(downloadUrl, '_blank');
+      this.showToast('📥 Файл загружается...');
+    } catch (error) {
+      console.error('❌ [DOWNLOAD] Ошибка:', error);
+      this.showError('Ошибка скачивания файла');
+    }
+  }
+
   // Обновление статуса платежа в UI
   updatePaymentStatus(invoice) {
     const statusElement = document.getElementById('paymentStatus');
@@ -634,6 +723,10 @@ class PaymentManager {
           </button>
         </div>
         
+        <div class="payment-status-container" id="paymentStatusContainer">
+          <div class="status-pending">⏳ Ожидание оплаты...</div>
+        </div>
+        
         <div class="invoice-info">
           <p>⏱️ После оплаты статус обновится автоматически</p>
           <p>📦 Заказ #${invoice.orderId}</p>
@@ -643,6 +736,9 @@ class PaymentManager {
     
     this.showModal(content);
     this.currentInvoice = invoice;
+    
+    // Запускаем автопроверку статуса заказа
+    this.startOrderStatusCheck(invoice.orderId);
   }
 
   closeModal() {
