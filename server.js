@@ -2089,68 +2089,75 @@ const startServer = async () => {
         }
       });
       
-      // === POLLING ДЛЯ НАТИВНОГО TON (каждые 20 секунд) ===
-      console.log('💎 Запуск TON polling для проверки оплаты (каждые 20 секунд)');
-      setInterval(async () => {
-        try {
-          const getPending = db.prepare(`
-            SELECT i.id, i.order_id, i.amount, i.invoice_payload, o.id as orderId
-            FROM invoices i
-            JOIN orders o ON i.order_id = o.id
-            WHERE i.status = $1 AND i.currency = $2
-          `);
-          const pending = await getPending.all('pending', 'TON');
+      // === БЕЗОПАСНЫЙ TON POLLING (каждые 20 секунд) ===
+      if (!process.env.TON_WALLET_ADDRESS) {
+        console.warn('⚠️  TON_WALLET_ADDRESS не задан - TON polling отключён');
+      } else {
+        console.log('💎 Запуск TON polling для проверки оплаты (каждые 20 секунд)');
+        
+        setInterval(async () => {
+          try {
+            // Проверяем наличие адреса
+            const address = process.env.TON_WALLET_ADDRESS?.trim();
+            if (!address) return;
 
-          if (pending.length === 0) return;
+            // Получаем pending инвойсы
+            const getPending = db.prepare(`
+              SELECT i.id, i.order_id, i.amount, i.invoice_payload, o.id as orderId
+              FROM invoices i
+              JOIN orders o ON i.order_id = o.id
+              WHERE i.status = $1 AND i.currency = $2
+            `);
+            const pending = await getPending.all('pending', 'TON');
 
-          console.log(`[TON POLLING] Проверка ${pending.length} ожидающих инвойсов...`);
+            if (!pending || pending.length === 0) return;
 
-          const address = process.env.TON_WALLET_ADDRESS?.trim();
-          if (!address) {
-            console.error('[TON POLLING] TON_WALLET_ADDRESS не настроен!');
-            return;
-          }
+            console.log(`[TON POLLING] Проверка ${pending.length} ожидающих инвойсов...`);
 
-          const url = `https://toncenter.com/api/v2/getTransactions?address=${address}&limit=20`;
-          const res = await fetch(url);
-          const data = await res.json();
+            // Динамический импорт fetch (безопасно для Node.js)
+            const fetch = (await import('node-fetch')).default;
+            
+            const url = `https://toncenter.com/api/v2/getTransactions?address=${address}&limit=20`;
+            const res = await fetch(url);
+            const data = await res.json();
 
-          if (!data.ok) {
-            console.error('[TON POLLING] TON Center error:', data);
-            return;
-          }
-
-          for (const inv of pending) {
-            const expectedNano = Math.round(inv.amount * 1_000_000_000);
-
-            // Ищем входящую транзакцию с нужной суммой
-            const tx = data.result.find(t =>
-              t.in_msg && 
-              t.in_msg.source !== '' && // входящая
-              t.in_msg.destination === address &&
-              Math.abs(parseInt(t.in_msg.value) - expectedNano) <= expectedNano * 0.1 // ±10% на комиссию
-            );
-
-            if (tx) {
-              const updateInvoice = db.prepare(`UPDATE invoices SET status = $1, transaction_hash = $2, paid_at = CURRENT_TIMESTAMP WHERE id = $3`);
-              await updateInvoice.run('paid', tx.transaction_id.hash, inv.id);
-              
-              const updateOrder = db.prepare(`UPDATE orders SET status = $1 WHERE id = $2`);
-              await updateOrder.run('paid', inv.order_id);
-
-              console.log('[TON POLLING] ✅ ОПЛАТА ЗАСЧИТАНА!', {
-                orderId: inv.order_id,
-                invoiceId: inv.id,
-                txHash: tx.transaction_id.hash,
-                amountReceived: parseInt(tx.in_msg.value),
-                expected: expectedNano
-              });
+            if (!data.ok || !data.result) {
+              console.error('[TON POLLING] TON Center error:', data);
+              return;
             }
+
+            for (const inv of pending) {
+              const expectedNano = Math.round(parseFloat(inv.amount) * 1_000_000_000);
+
+              // Ищем входящую транзакцию с нужной суммой
+              const tx = data.result.find(t =>
+                t.in_msg && 
+                t.in_msg.source !== '' && 
+                t.in_msg.destination === address &&
+                Math.abs(parseInt(t.in_msg.value) - expectedNano) <= expectedNano * 0.1
+              );
+
+              if (tx) {
+                const updateInvoice = db.prepare(`UPDATE invoices SET status = $1, transaction_hash = $2, paid_at = CURRENT_TIMESTAMP WHERE id = $3`);
+                await updateInvoice.run('paid', tx.transaction_id.hash, inv.id);
+                
+                const updateOrder = db.prepare(`UPDATE orders SET status = $1 WHERE id = $2`);
+                await updateOrder.run('paid', inv.order_id);
+
+                console.log('[TON POLLING] ✅ ОПЛАТА ЗАСЧИТАНА!', {
+                  orderId: inv.order_id,
+                  invoiceId: inv.id,
+                  txHash: tx.transaction_id.hash,
+                  amountReceived: parseInt(tx.in_msg.value),
+                  expected: expectedNano
+                });
+              }
+            }
+          } catch (err) {
+            console.error('[TON POLLING] ❌ Ошибка:', err.message);
           }
-        } catch (err) {
-          console.error('[TON POLLING] ❌ Критическая ошибка:', err);
-        }
-      }, 20000); // каждые 20 секунд
+        }, 20000); // каждые 20 секунд
+      }
     });
   } catch (error) {
     console.error('❌ Ошибка запуска сервера:', error);
