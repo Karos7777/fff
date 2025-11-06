@@ -877,51 +877,41 @@ app.post('/api/reviews', authMiddlewareWithDB, (req, res) => {
 
 // Удаление заказа из истории
 app.delete('/api/orders/:id', authMiddlewareWithDB, async (req, res) => {
-  console.log('\n🗑️ [ORDER DELETE] Запрос на удаление заказа');
+  const orderId = parseInt(req.params.id);
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  console.log(`🗑️ [ORDER DELETE] Запрос на удаление заказа #${orderId} от пользователя ${userId}`);
+
   try {
-    const orderId = parseInt(req.params.id);
-    const userId = req.user.id;
-    
-    console.log('🗑️ [ORDER DELETE] Order ID:', orderId, 'User ID:', userId);
-    
     // Проверяем, что заказ принадлежит пользователю
-    const orderResult = await db.query('SELECT * FROM orders WHERE id = $1 AND user_id = $2', [orderId, userId]);
+    const orderResult = await db.query('SELECT id, status FROM orders WHERE id = $1 AND user_id = $2', [orderId, userId]);
     const order = orderResult.rows[0];
     
     if (!order) {
-      console.error('❌ [ORDER DELETE] Заказ не найден');
+      console.log('❌ [ORDER DELETE] Заказ не найден или не принадлежит пользователю');
       return res.status(404).json({ error: 'Заказ не найден' });
     }
-    
-    console.log('🗑️ [ORDER DELETE] Найден заказ:', order);
-    
-    // Удаляем заказ и связанные данные в транзакции PostgreSQL
-    await db.query('BEGIN');
-    
-    try {
-      // Удаляем отзывы
-      const reviewsResult = await db.query('DELETE FROM reviews WHERE order_id = $1', [orderId]);
-      console.log('🗑️ [ORDER DELETE] Удалено отзывов:', reviewsResult.rowCount);
-      
-      // Удаляем инвойсы
-      const invoicesResult = await db.query('DELETE FROM invoices WHERE order_id = $1', [orderId]);
-      console.log('🗑️ [ORDER DELETE] Удалено инвойсов:', invoicesResult.rowCount);
-      
-      // Удаляем сам заказ
-      const orderDeleteResult = await db.query('DELETE FROM orders WHERE id = $1', [orderId]);
-      console.log('🗑️ [ORDER DELETE] Удалено заказов:', orderDeleteResult.rowCount);
-      
-      await db.query('COMMIT');
-      
-      console.log('✅ [ORDER DELETE] Заказ успешно удалён');
-      res.json({ 
-        success: true, 
-        message: 'Заказ успешно удалён' 
-      });
-    } catch (err) {
-      await db.query('ROLLBACK');
-      throw err;
+
+    // Нельзя удалять оплаченные заказы
+    if (order.status === 'paid') {
+      console.log('❌ [ORDER DELETE] Попытка удалить оплаченный заказ');
+      return res.status(403).json({ error: 'Нельзя удалить оплаченный заказ' });
     }
+
+    console.log(`🗑️ [ORDER DELETE] Удаление заказа #${orderId} со статусом: ${order.status}`);
+
+    // Удаляем связанные данные
+    await db.query('DELETE FROM reviews WHERE order_id = $1', [orderId]);
+    await db.query('DELETE FROM invoices WHERE order_id = $1', [orderId]);
+    await db.query('DELETE FROM orders WHERE id = $1', [orderId]);
+
+    console.log(`✅ [ORDER DELETE] Заказ #${orderId} успешно удалён`);
+    res.json({ success: true });
+    
   } catch (error) {
     console.error('❌ [ORDER DELETE] Ошибка:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -2084,32 +2074,35 @@ const startServer = async () => {
         }
       });
       
-      // === УЛЬТРА-ДЕБАГ TON POLLING (каждые 8 секунд) ===
+      // === НАДЁЖНЫЙ TON POLLING (каждые 10 секунд) ===
       if (!process.env.TON_WALLET_ADDRESS) {
         console.warn('⚠️  TON_WALLET_ADDRESS не задан - TON polling отключён');
       } else {
         const address = process.env.TON_WALLET_ADDRESS?.trim();
-        console.log('💎 Запуск TON polling для проверки оплаты (каждые 8 секунд)');
+        console.log('💎 Запуск TON polling для проверки оплаты (каждые 10 секунд)');
         console.log('💎 Адрес кошелька:', address);
         
         setInterval(async () => {
+          console.log('[TON POLLING] Запуск проверки...');
+          
           try {
-            // Получаем pending инвойсы
-            const getPending = db.prepare(`
+            // Получаем pending инвойсы (PostgreSQL)
+            const pendingResult = await db.query(`
               SELECT i.id, i.order_id, i.amount, i.invoice_payload, o.id as orderId
               FROM invoices i
               JOIN orders o ON i.order_id = o.id
               WHERE i.status = $1 AND i.currency = $2
-            `);
-            const pending = await getPending.all('pending', 'TON');
+            `, ['pending', 'TON']);
+            
+            const pending = pendingResult.rows;
 
             if (!pending || pending.length === 0) {
-              console.log('[TON POLLING] Нет ожидающих инвойсов');
+              console.log('[TON POLLING] Нет ожидающих TON-заказов');
               return;
             }
 
-            const payloads = pending.map(i => i.invoice_payload).join(', ');
-            console.log(`\n[TON POLLING] Проверяем ${pending.length} инвойсов: ${payloads}`);
+            const orderIds = pending.map(p => `#${p.order_id}`).join(', ');
+            console.log(`[TON POLLING] Проверяем ${pending.length} заказов: ${orderIds}`);
 
             // Динамический импорт fetch
             const fetch = (await import('node-fetch')).default;
@@ -2119,32 +2112,18 @@ const startServer = async () => {
             const data = await res.json();
 
             if (!data.ok || !data.result) {
-              console.error('[TON POLLING] TON Center ошибка:', data);
+              console.log('[TON POLLING] TON Center не вернул транзакции');
               return;
             }
 
-            console.log(`[TON POLLING] Найдено ${data.result.length} транзакций:`);
-
-            // ДЕБАГ: Выводим ВСЕ транзакции
-            for (const tx of data.result) {
-              const value = parseInt(tx.in_msg?.value || 0) / 1e9;
-              const from = tx.in_msg?.source || 'unknown';
-              const to = tx.in_msg?.destination || 'unknown';
-              const hash = tx.transaction_id?.hash || 'unknown';
-
-              console.log(`   → ${value.toFixed(6)} TON | от ${from.slice(0, 8)}... → ${to.slice(0, 8)}... | hash: ${hash.slice(0, 16)}...`);
-            }
+            console.log(`[TON POLLING] Найдено ${data.result.length} транзакций`);
 
             // Проверяем каждый pending инвойс
             for (const inv of pending) {
               const expected = parseFloat(inv.amount);
-              const expectedNano = Math.round(expected * 1_000_000_000);
               const min = expected * 0.9;
-              const minNano = Math.round(min * 1_000_000_000);
 
-              console.log(`[TON POLLING] Ищем для заказа #${inv.order_id} (${inv.invoice_payload}):`);
-              console.log(`   Ожидается: ${expected} TON (${expectedNano} nanoTON)`);
-              console.log(`   Минимум: ${min.toFixed(6)} TON (${minNano} nanoTON)`);
+              console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: ожидается ${expected} TON (мин: ${min.toFixed(6)} TON)`);
 
               // Ищем входящую транзакцию с суммой >= min
               const tx = data.result.find(t =>
@@ -2154,28 +2133,21 @@ const startServer = async () => {
 
               if (tx) {
                 const received = parseInt(tx.in_msg.value) / 1e9;
-                const receivedNano = parseInt(tx.in_msg.value);
+                const hash = tx.transaction_id?.hash || 'unknown';
                 
-                const updateInvoice = db.prepare(`UPDATE invoices SET status = $1, transaction_hash = $2, paid_at = CURRENT_TIMESTAMP WHERE id = $3`);
-                await updateInvoice.run('paid', tx.transaction_id.hash, inv.id);
-                
-                const updateOrder = db.prepare(`UPDATE orders SET status = $1 WHERE id = $2`);
-                await updateOrder.run('paid', inv.order_id);
+                // PostgreSQL: используем query
+                await db.query(`UPDATE invoices SET status = $1, transaction_hash = $2, paid_at = CURRENT_TIMESTAMP WHERE id = $3`, ['paid', hash, inv.id]);
+                await db.query(`UPDATE orders SET status = $1 WHERE id = $2`, ['paid', inv.order_id]);
 
-                console.log(`\n✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id}`);
-                console.log(`   Получено: ${received.toFixed(6)} TON (${receivedNano} nanoTON)`);
-                console.log(`   Ожидалось: ${expected} TON (${expectedNano} nanoTON)`);
-                console.log(`   Hash: ${tx.transaction_id.hash}`);
-                console.log(`   Разница: ${((received - expected) / expected * 100).toFixed(2)}%\n`);
+                console.log(`✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id} | ${received.toFixed(6)} TON | hash: ${hash.slice(0, 16)}...`);
               } else {
-                console.log(`   ❌ Транзакция не найдена\n`);
+                console.log(`   ❌ Транзакция не найдена`);
               }
             }
           } catch (err) {
-            console.error('[TON POLLING] ❌ Критическая ошибка:', err.message);
-            console.error(err.stack);
+            console.error('[TON POLLING] ❌ Ошибка:', err.message);
           }
-        }, 8000); // каждые 8 секунд
+        }, 10000); // каждые 10 секунд
       }
     });
   } catch (error) {
