@@ -2128,16 +2128,20 @@ const startServer = async () => {
 
             for (const inv of pending) {
               const expectedNano = Math.round(parseFloat(inv.amount) * 1_000_000_000);
+              const minAcceptable = Math.round(expectedNano * 0.95); // Минимум 95% от суммы (учитываем комиссию)
 
-              // Ищем входящую транзакцию с нужной суммой
+              // Ищем входящую транзакцию с суммой >= minAcceptable
               const tx = data.result.find(t =>
                 t.in_msg && 
                 t.in_msg.source !== '' && 
                 t.in_msg.destination === address &&
-                Math.abs(parseInt(t.in_msg.value) - expectedNano) <= expectedNano * 0.1
+                parseInt(t.in_msg.value) >= minAcceptable
               );
 
               if (tx) {
+                const received = parseInt(tx.in_msg.value);
+                const difference = ((received - expectedNano) / expectedNano * 100).toFixed(2);
+                
                 const updateInvoice = db.prepare(`UPDATE invoices SET status = $1, transaction_hash = $2, paid_at = CURRENT_TIMESTAMP WHERE id = $3`);
                 await updateInvoice.run('paid', tx.transaction_id.hash, inv.id);
                 
@@ -2148,8 +2152,10 @@ const startServer = async () => {
                   orderId: inv.order_id,
                   invoiceId: inv.id,
                   txHash: tx.transaction_id.hash,
-                  amountReceived: parseInt(tx.in_msg.value),
-                  expected: expectedNano
+                  receivedNano: received,
+                  expectedNano: expectedNano,
+                  difference: difference + '%',
+                  minAcceptable: minAcceptable
                 });
               }
             }
