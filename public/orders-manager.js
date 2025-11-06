@@ -141,8 +141,8 @@ function renderOrderCard(order) {
             </div>
             
             <div class="order-actions">
-                ${canCancel ? `
-                    <button class="btn-pay-order" onclick="openPaymentForOrder(${order.id}, ${order.product_id})">
+                ${canCancel && (order.product_id || order.productId) ? `
+                    <button class="btn-pay-order" onclick="openPaymentForOrder(${order.id}, ${order.product_id || order.productId})">
                         💳 Оплатить
                     </button>
                 ` : ''}

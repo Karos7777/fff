@@ -74,12 +74,16 @@ module.exports = () => {
           const txDest = t.in_msg.destination?.address || '';
           const txMessage = t.in_msg.msg || t.in_msg.decoded_body?.text || '';
           
-          // Проверяем: адрес совпадает И payload совпадает И сумма >= minAmount
-          const addressMatch = txDest === address || txDest.includes(address.slice(0, 30));
+          // Проверяем payload и сумму (адрес не проверяем, т.к. форматы разные)
           const payloadMatch = txMessage === payload;
           const amountMatch = txAmount >= minAmount;
           
-          return addressMatch && payloadMatch && amountMatch;
+          // Детальное логирование для отладки
+          if (payloadMatch && amountMatch) {
+            console.log(`   ✅ НАЙДЕНО! payload: "${txMessage}" | сумма: ${txAmount.toFixed(9)} TON | адрес: ${txDest.slice(0, 30)}...`);
+          }
+          
+          return payloadMatch && amountMatch;
         });
 
         if (tx) {

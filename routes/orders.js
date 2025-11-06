@@ -72,16 +72,20 @@ module.exports = (authMiddleware) => {
       const result = await db.query(`
         SELECT 
           o.id,
+          o.product_id,
           o.status,
           o.created_at,
           o.payment_method,
+          o.transaction_hash,
           p.name as product_name,
           p.price,
           p.price_ton,
           p.image_url,
-          p.file_path
+          p.file_path,
+          i.currency as payment_currency
         FROM orders o
         JOIN products p ON o.product_id = p.id
+        LEFT JOIN invoices i ON o.id = i.order_id
         WHERE o.user_id = $1
         ORDER BY o.created_at DESC
       `, [userId]);
