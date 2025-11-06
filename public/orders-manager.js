@@ -141,6 +141,11 @@ function renderOrderCard(order) {
             </div>
             
             <div class="order-actions">
+                ${canCancel ? `
+                    <button class="btn-pay-order" onclick="openPaymentForOrder(${order.id}, ${order.product_id})">
+                        💳 Оплатить
+                    </button>
+                ` : ''}
                 ${order.status === 'pending' && order.payment_currency === 'TON' ? `
                     <button class="btn-check-payment" onclick="checkTonPayment(${order.id})">
                         🔍 Проверить оплату
@@ -558,6 +563,49 @@ async function downloadFile(orderId) {
     }
 }
 
+// Открыть окно оплаты для существующего заказа
+async function openPaymentForOrder(orderId, productId) {
+    console.log(`💳 [PAYMENT] Открытие оплаты для заказа #${orderId}, товар #${productId}`);
+    
+    try {
+        // Закрываем модальное окно заказов
+        const ordersModal = document.getElementById('ordersModal');
+        if (ordersModal) {
+            ordersModal.style.display = 'none';
+        }
+        
+        // Получаем информацию о товаре
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`/api/products/${productId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки товара');
+        }
+        
+        const product = await response.json();
+        
+        // Открываем модальное окно оплаты
+        if (typeof window.paymentManager !== 'undefined' && window.paymentManager.showPaymentModal) {
+            window.paymentManager.showPaymentModal(
+                orderId,
+                productId,
+                product.name,
+                product.price
+            );
+        } else {
+            showError('Менеджер платежей не загружен');
+        }
+        
+    } catch (error) {
+        console.error('❌ [PAYMENT] Ошибка:', error);
+        showError('Ошибка открытия окна оплаты');
+    }
+}
+
 // Показать кнопку "Мои заказы" после авторизации
 function showMyOrdersButton() {
     const btn = document.getElementById('myOrdersBtn');
@@ -572,6 +620,7 @@ window.loadOrders = loadOrders;
 window.cancelOrder = cancelOrder;
 window.deleteOrder = deleteOrder;
 window.openReviewModal = openReviewModal;
+window.openPaymentForOrder = openPaymentForOrder;
 window.handleReviewSubmit = handleReviewSubmit;
 window.showMyOrdersButton = showMyOrdersButton;
 window.checkTonPayment = checkTonPayment;
