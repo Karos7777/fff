@@ -612,11 +612,19 @@ app.post('/api/orders', authMiddlewareWithDB, async (req, res) => {
     console.log('📦 [SERVER] User:', req.user);
     
     const { product_id } = req.body;
-    const user_id = req.user.id;
+    const user_id = req.user?.id;
 
+    console.log('📦 [ORDER] user_id from token:', user_id);
+    
+    // КРИТИЧНО: Проверяем user_id
+    if (!user_id) {
+      console.error('❌ [ORDER] User ID missing in token');
+      return res.status(400).json({ error: 'User ID missing in token' });
+    }
+    
     console.log('📦 [SERVER] product_id:', product_id, 'user_id:', user_id);
 
-    const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+    const getProduct = db.prepare('SELECT * FROM products WHERE id = $1');
     console.log('📦 [SERVER] Запрос товара...');
     const product = await getProduct.get(product_id);
     console.log('📦 [SERVER] Товар найден:', product);
@@ -626,25 +634,25 @@ app.post('/api/orders', authMiddlewareWithDB, async (req, res) => {
     }
     
     console.log('📦 [SERVER] Создание записи заказа...');
-    const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
+    console.log('📦 [SERVER] Inserting with user_id:', user_id, 'product_id:', product_id);
+    const insertOrder = db.prepare('INSERT INTO orders (user_id, product_id) VALUES ($1, $2) RETURNING id');
     console.log('📦 [SERVER] SQL подготовлен, выполнение...');
-    const result = await insertOrder.run(user_id, product_id);
+    const result = await insertOrder.get(user_id, product_id);
     
     console.log('✅ [SERVER] Заказ создан, result:', result);
-    console.log('✅ [SERVER] Заказ ID:', result.lastInsertRowid);
-    console.log('✅ [SERVER] result.changes:', result.changes);
+    console.log('✅ [SERVER] Заказ ID:', result.id);
     
     // Начисляем 5% пригласившему
-    const getUser = db.prepare('SELECT referrer_id FROM users WHERE id = ?');
+    const getUser = db.prepare('SELECT referrer_id FROM users WHERE id = $1');
     const user = await getUser.get(user_id);
     
     if (user && user.referrer_id) {
       const bonus = product.price * 0.05;
-      const updateReferrer = db.prepare('UPDATE users SET referral_earnings = referral_earnings + ? WHERE id = ?');
+      const updateReferrer = db.prepare('UPDATE users SET referral_earnings = referral_earnings + $1 WHERE id = $2');
       await updateReferrer.run(bonus, user.referrer_id);
     }
     
-    res.json({ id: result.lastInsertRowid, message: 'Заказ создан успешно' });
+    res.json({ id: result.id, message: 'Заказ создан успешно' });
   } catch (error) {
     console.error('❌ [SERVER] Error creating order:', error);
     console.error('❌ [SERVER] Error message:', error.message);
@@ -1348,15 +1356,22 @@ app.post('/api/notify-order', authMiddlewareWithDB, async (req, res) => {
 app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req, res) => {
   try {
     const { orderId, productId, amount, description } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    
+    console.log('[STARS INVOICE] user_id from token:', userId);
+
+    if (!userId) {
+      console.error('[STARS INVOICE] User ID missing in token');
+      return res.status(400).json({ error: 'User ID missing in token' });
+    }
 
     if (!orderId || !productId || !amount || !description) {
       return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
     }
 
     // Проверяем существование заказа
-    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
-    const order = getOrder.get(orderId, userId);
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = $1 AND user_id = $2');
+    const order = await getOrder.get(orderId, userId);
     
     if (!order) {
       return res.status(404).json({ error: 'Заказ не найден' });
@@ -1383,7 +1398,14 @@ app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req,
 app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req, res) => {
   try {
     const { orderId, productId, amount, currency } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    
+    console.log('[CRYPTO INVOICE] user_id from token:', userId);
+
+    if (!userId) {
+      console.error('[CRYPTO INVOICE] User ID missing in token');
+      return res.status(400).json({ error: 'User ID missing in token' });
+    }
 
     if (!orderId || !productId || !amount || !currency) {
       return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
@@ -1394,8 +1416,8 @@ app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req
     }
 
     // Проверяем существование заказа
-    const getOrder = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
-    const order = getOrder.get(orderId, userId);
+    const getOrder = db.prepare('SELECT * FROM orders WHERE id = $1 AND user_id = $2');
+    const order = await getOrder.get(orderId, userId);
     
     if (!order) {
       return res.status(404).json({ error: 'Заказ не найден' });

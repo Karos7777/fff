@@ -57,13 +57,16 @@ const authMiddleware = (db) => {
       const token = authHeader.substring(7);
       const decoded = jwt.verify(token, JWT_SECRET);
       
+      console.log('[AUTH] Decoded token:', { id: decoded.id, telegram_id: decoded.telegram_id });
+      
       // Если в токене есть id - используем его напрямую
       if (decoded.id) {
         // Получаем актуальные данные из БД для проверки
-        const getUserQuery = db.prepare('SELECT * FROM users WHERE id = ?');
+        const getUserQuery = db.prepare('SELECT * FROM users WHERE id = $1');
         const dbUser = await getUserQuery.get(decoded.id);
         
         if (!dbUser) {
+          console.error('[AUTH] User not found by id:', decoded.id);
           return res.status(401).json({ error: 'Пользователь не найден в базе данных' });
         }
         
@@ -75,13 +78,16 @@ const authMiddleware = (db) => {
           role: dbUser.is_admin ? 'admin' : 'user',
           is_admin: dbUser.is_admin
         };
+        
+        console.log('[AUTH] User authenticated by id:', req.user.id);
       } 
       // Fallback: если в токене нет id, но есть telegram_id
       else if (decoded.telegram_id) {
-        const getUserQuery = db.prepare('SELECT * FROM users WHERE telegram_id = ?');
+        const getUserQuery = db.prepare('SELECT * FROM users WHERE telegram_id = $1');
         const dbUser = await getUserQuery.get(decoded.telegram_id.toString());
         
         if (!dbUser) {
+          console.error('[AUTH] User not found by telegram_id:', decoded.telegram_id);
           return res.status(401).json({ error: 'Пользователь не найден в базе данных' });
         }
         
@@ -92,13 +98,19 @@ const authMiddleware = (db) => {
           role: dbUser.is_admin ? 'admin' : 'user',
           is_admin: dbUser.is_admin
         };
+        
+        console.log('[AUTH] User authenticated by telegram_id:', req.user.id);
       }
-      // Если нет ни id, ни telegram_id - используем старый формат (только для обратной совместимости)
+      // Если нет ни id, ни telegram_id - ошибка
       else {
-        req.user = decoded;
-        req.user.role = decoded.role || (decoded.is_admin ? 'admin' : 'user');
-        req.user.is_admin = decoded.is_admin;
-        console.warn('⚠️ [AUTH] Токен не содержит id или telegram_id. Используется устаревший формат.');
+        console.error('[AUTH] Token missing both id and telegram_id');
+        return res.status(400).json({ error: 'Invalid token: missing user id' });
+      }
+      
+      // КРИТИЧНО: Проверяем что req.user.id установлен
+      if (!req.user.id) {
+        console.error('[AUTH] CRITICAL: req.user.id is undefined after authentication');
+        return res.status(500).json({ error: 'Authentication failed: user id not set' });
       }
       
       next();
