@@ -665,6 +665,8 @@ app.post('/api/orders', authMiddlewareWithDB, async (req, res) => {
     
     // Проверяем метод оплаты
     const paymentMethod = req.body.payment_method || req.body.paymentMethod;
+    console.log('[ORDER] Payment method:', paymentMethod);
+    console.log('[ORDER] Request body:', req.body);
     
     // Если выбран TON - создаём инвойс
     if (paymentMethod === 'ton' || paymentMethod === 'TON') {
