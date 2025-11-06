@@ -141,6 +141,16 @@ function renderOrderCard(order) {
             </div>
             
             <div class="order-actions">
+                ${order.status === 'pending' && order.payment_currency === 'TON' ? `
+                    <button class="btn-check-payment" onclick="checkTonPayment(${order.id})">
+                        🔍 Проверить оплату
+                    </button>
+                ` : ''}
+                ${order.status === 'paid' || order.status === 'completed' ? `
+                    <button class="btn-download" onclick="downloadFile(${order.id})">
+                        📥 Скачать файл
+                    </button>
+                ` : ''}
                 ${canCancel ? `
                     <button class="btn-cancel-order" onclick="cancelOrder(${order.id})">
                         ❌ Отменить заказ

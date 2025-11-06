@@ -246,9 +246,17 @@ async function initDB() {
         stock INTEGER DEFAULT 0,
         infinite_stock BOOLEAN DEFAULT false,
         is_active BOOLEAN DEFAULT true,
+        file_path TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    
+    // Добавляем колонку file_path если её нет
+    try {
+      await db.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
+    } catch (e) {
+      // Колонка уже существует
+    }
 
     // Таблица отзывов
     await db.exec(`
@@ -1572,59 +1580,134 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
   }
 });
 
-// Webhook для TON платежей
-app.post('/api/ton/webhook', async (req, res) => {
+// Проверка TON платежей через API (вместо webhook)
+app.post('/api/ton/check-payment', authMiddlewareWithDB, async (req, res) => {
   try {
-    const { address, amount, text, hash } = req.body;
+    const { orderId } = req.body;
+    const userId = req.user.id;
     
-    console.log('[TON WEBHOOK] Получено:', { address, amount, text, hash });
+    console.log('[TON CHECK] Проверка оплаты заказа:', orderId);
     
-    if (!text || !text.startsWith('order_')) {
-      console.log('[TON WEBHOOK] Неверный payload:', text);
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-    
-    const orderId = parseInt(text.replace('order_', ''));
-    if (isNaN(orderId)) {
-      console.log('[TON WEBHOOK] Неверный order ID:', text);
-      return res.status(400).json({ error: 'Invalid order ID' });
-    }
-    
-    // Найти инвойс по payload
-    const getInvoice = db.prepare('SELECT * FROM invoices WHERE invoice_payload = $1 AND status = $2');
-    const invoice = await getInvoice.get(text, 'pending');
+    // Найти инвойс
+    const getInvoice = db.prepare(`
+      SELECT i.*, o.user_id 
+      FROM invoices i 
+      JOIN orders o ON i.order_id = o.id 
+      WHERE i.order_id = $1 AND o.user_id = $2 AND i.status = $3
+    `);
+    const invoice = await getInvoice.get(orderId, userId, 'pending');
     
     if (!invoice) {
-      console.log('[TON WEBHOOK] Инвойс не найден или уже оплачен:', text);
-      return res.status(404).json({ error: 'Invoice not found or already paid' });
+      return res.json({ paid: false, message: 'Инвойс не найден или уже оплачен' });
     }
     
-    console.log('[TON WEBHOOK] Инвойс найден:', invoice);
+    // Проверяем транзакции через TON API
+    const axios = require('axios');
+    const walletAddress = process.env.TON_WALLET_ADDRESS.trim();
+    const payload = invoice.invoice_payload; // order_88
     
-    // Проверить сумму (в нано-TON)
-    const expectedNano = Math.round(invoice.amount * 1_000_000_000);
-    const receivedNano = parseInt(amount);
+    console.log('[TON CHECK] Проверка транзакций для:', { walletAddress, payload });
     
-    console.log('[TON WEBHOOK] Проверка суммы:', { expectedNano, receivedNano });
-    
-    if (receivedNano < expectedNano * 0.99) { // ±1% на комиссию
-      console.log('[TON WEBHOOK] Сумма слишком мала');
-      return res.status(400).json({ error: 'Amount too low', expected: expectedNano, received: receivedNano });
+    try {
+      // Получаем последние транзакции
+      const response = await axios.get(`https://toncenter.com/api/v2/getTransactions`, {
+        params: {
+          address: walletAddress,
+          limit: 20
+        }
+      });
+      
+      const transactions = response.data.result || [];
+      console.log('[TON CHECK] Найдено транзакций:', transactions.length);
+      
+      // Ищем транзакцию с нашим payload
+      for (const tx of transactions) {
+        const inMsg = tx.in_msg;
+        if (!inMsg || !inMsg.message) continue;
+        
+        const comment = inMsg.message;
+        const value = parseInt(inMsg.value) || 0;
+        
+        console.log('[TON CHECK] Транзакция:', { comment, value });
+        
+        if (comment === payload) {
+          const expectedNano = Math.round(invoice.amount * 1_000_000_000);
+          
+          if (value >= expectedNano * 0.99) {
+            // Оплата найдена!
+            const updateInvoice = db.prepare('UPDATE invoices SET status = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2');
+            await updateInvoice.run('paid', invoice.id);
+            
+            const updateOrder = db.prepare('UPDATE orders SET status = $1 WHERE id = $2');
+            await updateOrder.run('paid', invoice.order_id);
+            
+            console.log('[TON CHECK] ✅ ОПЛАТА ПОДТВЕРЖДЕНА:', { orderId, invoiceId: invoice.id });
+            
+            return res.json({ 
+              paid: true, 
+              message: 'Оплата подтверждена!',
+              orderId: invoice.order_id 
+            });
+          }
+        }
+      }
+      
+      return res.json({ paid: false, message: 'Оплата пока не найдена' });
+      
+    } catch (apiError) {
+      console.error('[TON CHECK] Ошибка TON API:', apiError.message);
+      return res.json({ paid: false, message: 'Ошибка проверки, попробуйте позже' });
     }
     
-    // Обновить статусы
-    const updateInvoice = db.prepare('UPDATE invoices SET status = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2');
-    await updateInvoice.run('paid', invoice.id);
-    
-    const updateOrder = db.prepare('UPDATE orders SET status = $1 WHERE id = $2');
-    await updateOrder.run('paid', invoice.order_id);
-    
-    console.log('[TON WEBHOOK] ✅ ОПЛАТА ЗАСЧИТАНА:', { orderId: invoice.order_id, invoiceId: invoice.id, hash });
-    
-    res.json({ success: true, orderId: invoice.order_id });
   } catch (error) {
-    console.error('[TON WEBHOOK] ❌ Ошибка:', error);
+    console.error('[TON CHECK] ❌ Ошибка:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
+  }
+});
+
+// Скачивание файла товара (только для оплаченных заказов)
+app.get('/api/orders/:orderId/download', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    
+    console.log('[DOWNLOAD] Запрос на скачивание:', { orderId, userId });
+    
+    // Проверяем заказ
+    const getOrder = db.prepare(`
+      SELECT o.*, p.file_path, p.name as product_name
+      FROM orders o
+      JOIN products p ON o.product_id = p.id
+      WHERE o.id = $1 AND o.user_id = $2 AND o.status = $3
+    `);
+    const order = await getOrder.get(orderId, userId, 'paid');
+    
+    if (!order) {
+      return res.status(403).json({ error: 'Заказ не найден или не оплачен' });
+    }
+    
+    if (!order.file_path) {
+      return res.status(404).json({ error: 'Файл не найден для этого товара' });
+    }
+    
+    const filePath = path.join(__dirname, 'files', order.file_path);
+    
+    if (!fs.existsSync(filePath)) {
+      console.error('[DOWNLOAD] Файл не существует:', filePath);
+      return res.status(404).json({ error: 'Файл не найден на сервере' });
+    }
+    
+    console.log('[DOWNLOAD] ✅ Отправка файла:', order.file_path);
+    
+    res.download(filePath, order.file_path, (err) => {
+      if (err) {
+        console.error('[DOWNLOAD] Ошибка отправки:', err);
+      }
+    });
+    
+  } catch (error) {
+    console.error('[DOWNLOAD] ❌ Ошибка:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
