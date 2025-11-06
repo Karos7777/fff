@@ -501,6 +501,61 @@ async function deleteOrder(orderId) {
     }
 }
 
+// Проверка TON оплаты
+async function checkTonPayment(orderId) {
+    try {
+        showLoading();
+        console.log('[TON CHECK] Проверка оплаты заказа:', orderId);
+        
+        const token = localStorage.getItem('authToken');
+        const response = await fetch('/api/ton/check-payment', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ orderId })
+        });
+        
+        const data = await response.json();
+        console.log('[TON CHECK] Ответ:', data);
+        
+        if (data.paid) {
+            showSuccess('✅ Оплата подтверждена! Файл доступен для скачивания');
+            await loadOrders();
+            renderOrders();
+        } else {
+            showInfo(data.message || 'Оплата пока не найдена. Попробуйте через минуту.');
+        }
+        
+    } catch (error) {
+        console.error('[TON CHECK] Ошибка:', error);
+        showError('Ошибка проверки оплаты');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Скачивание файла товара
+async function downloadFile(orderId) {
+    try {
+        console.log('[DOWNLOAD] Скачивание файла заказа:', orderId);
+        
+        const token = localStorage.getItem('authToken');
+        const url = `/api/orders/${orderId}/download`;
+        
+        // Открываем в новой вкладке с токеном в URL
+        const downloadUrl = `${url}?token=${encodeURIComponent(token)}`;
+        window.open(downloadUrl, '_blank');
+        
+        showSuccess('📥 Файл загружается...');
+        
+    } catch (error) {
+        console.error('[DOWNLOAD] Ошибка:', error);
+        showError('Ошибка скачивания файла');
+    }
+}
+
 // Показать кнопку "Мои заказы" после авторизации
 function showMyOrdersButton() {
     const btn = document.getElementById('myOrdersBtn');
@@ -517,3 +572,5 @@ window.deleteOrder = deleteOrder;
 window.openReviewModal = openReviewModal;
 window.handleReviewSubmit = handleReviewSubmit;
 window.showMyOrdersButton = showMyOrdersButton;
+window.checkTonPayment = checkTonPayment;
+window.downloadFile = downloadFile;
