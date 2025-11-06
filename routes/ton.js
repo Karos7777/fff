@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db');
 
-module.exports = (db, authMiddleware) => {
+module.exports = (authMiddleware) => {
   // Быстрая проверка статуса заказа (GET для фронта)
   router.get('/check/:orderId', authMiddleware, async (req, res) => {
     try {

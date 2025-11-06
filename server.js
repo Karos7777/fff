@@ -346,9 +346,9 @@ initDB()
       // Сохраняем paymentService для доступа из роутов
       app.set('paymentService', paymentService);
       
-      // Подключаем модульные роуты
-      app.use('/api/orders', ordersRoutes(db, authMiddlewareWithDB));
-      app.use('/api/ton', tonRoutes(db, authMiddlewareWithDB));
+      // Подключаем модульные роуты (db импортируется внутри модулей)
+      app.use('/api/orders', ordersRoutes(authMiddlewareWithDB));
+      app.use('/api/ton', tonRoutes(authMiddlewareWithDB));
       console.log('✅ Модульные роуты подключены');
       
     } catch (error) {
@@ -921,7 +921,7 @@ const startServer = async () => {
       }
       
       // === ЗАПУСК TON POLLING ===
-      tonPolling(db);
+      tonPolling(); // db импортируется внутри модуля
       
       // Запускаем cron задачу для автоматической отмены истёкших заказов
       console.log('⏰ Запуск cron задачи для автоотмены заказов (каждые 5 минут)');

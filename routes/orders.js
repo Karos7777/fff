@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db');
 
-module.exports = (db, authMiddleware) => {
+module.exports = (authMiddleware) => {
   // Создание заказа
   router.post('/', authMiddleware, async (req, res) => {
     try {

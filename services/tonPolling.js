@@ -1,7 +1,9 @@
 // TON Polling Service
 // Автоматическая проверка оплаты TON транзакций каждые 10 секунд
 
-module.exports = (db) => {
+const db = require('../db');
+
+module.exports = () => {
   const address = process.env.TON_WALLET_ADDRESS?.trim();
   
   if (!address) {
