@@ -123,6 +123,14 @@ const authMiddleware = (db) => {
 
 // Универсальная функция генерации токена с role и is_admin
 const generateToken = (user) => {
+  console.log('[GENERATE TOKEN] Input user object:', user);
+  
+  // КРИТИЧНО: Проверяем что user.id существует
+  if (!user.id && !user.telegram_id) {
+    console.error('[GENERATE TOKEN] CRITICAL: user object missing both id and telegram_id!');
+    throw new Error('Cannot generate token: user.id or user.telegram_id is required');
+  }
+  
   const payload = {
     id: user.id,
     telegram_id: user.telegram_id,
@@ -131,6 +139,9 @@ const generateToken = (user) => {
     is_admin: user.is_admin,
     iat: Math.floor(Date.now() / 1000)
   };
+  
+  console.log('[GENERATE TOKEN] Payload:', payload);
+  
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
 };
 

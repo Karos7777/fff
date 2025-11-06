@@ -402,6 +402,13 @@ app.post('/api/auth/telegram', async (req, res) => {
             }
         }
         
+        // КРИТИЧНО: Проверяем user перед генерацией токена
+        console.log('🔑 [AUTH] User object before generateToken:', user);
+        if (!user.id) {
+            console.error('❌ [AUTH] CRITICAL: user.id is undefined!');
+            return res.status(500).json({ error: 'Failed to create user in database' });
+        }
+        
         // Создаем JWT токен
         const token = generateToken(user);
         
@@ -429,7 +436,7 @@ app.post('/api/auth/telegram', async (req, res) => {
 // API маршруты
 
 // Регистрация/авторизация пользователя
-app.post('/api/auth', (req, res) => {
+app.post('/api/auth', async (req, res) => {
   try {
     const { telegram_id, username, first_name, last_name, ref } = req.body;
     let referrer_id = null;
@@ -450,26 +457,27 @@ app.post('/api/auth', (req, res) => {
     });
     
     // Ищем существующего пользователя
-    const getUser = db.prepare('SELECT * FROM users WHERE telegram_id = ?');
-    const user = getUser.get(telegram_id);
+    const getUser = db.prepare('SELECT * FROM users WHERE telegram_id = $1');
+    const user = await getUser.get(telegram_id);
     
     if (user) {
       // Пользователь существует - обновляем данные если нужно
       if (first_name || last_name) {
-        const updateUser = db.prepare('UPDATE users SET first_name = ?, last_name = ? WHERE id = ?');
-        updateUser.run(first_name || user.first_name, last_name || user.last_name, user.id);
+        const updateUser = db.prepare('UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3');
+        await updateUser.run(first_name || user.first_name, last_name || user.last_name, user.id);
         user.first_name = first_name || user.first_name;
         user.last_name = last_name || user.last_name;
       }
       
       // Обновляем is_admin если изменился
       if (user.is_admin !== isAdmin) {
-        const updateAdminStatus = db.prepare('UPDATE users SET is_admin = ? WHERE id = ?');
-        updateAdminStatus.run(isAdmin, user.id);
+        const updateAdminStatus = db.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
+        await updateAdminStatus.run(isAdmin, user.id);
         user.is_admin = isAdmin;
         console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
       }
       
+      console.log('🔑 [AUTH /api/auth] User object before generateToken:', user);
       const token = generateToken(user);
       res.json({ 
         token, 
@@ -487,11 +495,11 @@ app.post('/api/auth', (req, res) => {
       });
     } else {
       // Создаем нового пользователя
-      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id, is_admin) VALUES (?, ?, ?, ?, ?, ?)');
-      const result = insertUser.run(telegram_id, username, first_name, last_name, referrer_id, isAdmin);
+      const insertUser = db.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id, is_admin) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id');
+      const result = await insertUser.get(telegram_id, username, first_name, last_name, referrer_id, isAdmin);
       
       const newUser = {
-        id: result.lastInsertRowid,
+        id: result.id,  // PostgreSQL возвращает id через RETURNING
         telegram_id,
         username,
         first_name,
@@ -500,12 +508,13 @@ app.post('/api/auth', (req, res) => {
       };
       
       console.log('✅ [AUTH] Создан новый пользователь с is_admin:', isAdmin);
+      console.log('🔑 [AUTH /api/auth] New user object before generateToken:', newUser);
       
       const token = generateToken(newUser);
       res.json({ 
         token, 
         user: { 
-          id: result.lastInsertRowid, 
+          id: result.id, 
           telegram_id, 
           username,
           first_name,
