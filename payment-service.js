@@ -213,52 +213,65 @@ class PaymentService {
       
       // TON платежи
       if (currency === 'TON') {
-        if (!orderId || !amount || !this.tonWalletAddress) {
-          throw new Error('Отсутствуют обязательные параметры: orderId, amount или TON_WALLET_ADDRESS');
-        }
-
-        const amountNano = Math.round(parseFloat(amount) * 1_000_000_000);
+        const amountParsed = parseFloat(amount);
+        const amountNano = Math.round(amountParsed * 1_000_000_000);
         const payload = `order_${orderId}`;
-        const address = this.tonWalletAddress.trim();
+        const address = process.env.TON_WALLET_ADDRESS?.trim();
+
+        // ПРОВЕРКА ВСЕГО
+        if (!orderId || !userId || !amountParsed || !address) {
+          throw new Error('TON: missing orderId, userId, amount, or TON_WALLET_ADDRESS');
+        }
 
         const tonDeepLink = `ton://transfer/${address}?amount=${amountNano}&text=${payload}`;
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(tonDeepLink)}`;
 
+        console.log('[TON INVOICE] Параметры:', { orderId, userId, amount: amountParsed, amountNano, payload });
         console.log('[TON INVOICE] Deep link:', tonDeepLink);
         console.log('[TON INVOICE] QR URL:', qrUrl);
 
-        // PostgreSQL INSERT + RETURNING
-        const insertInvoice = this.db.prepare(`
-          INSERT INTO invoices (
-            order_id, user_id, product_id, amount, currency, status,
-            invoice_payload, crypto_address
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          RETURNING id
-        `);
-        
+        // 100% СОВМЕСТИМО с схемой invoices
+        const sql = `
+          INSERT INTO invoices 
+            (order_id, user_id, product_id, amount, currency, status, invoice_payload, crypto_address)
+          VALUES 
+            ($1, $2, $3, $4, $5, 'pending', $6, $7)
+          RETURNING id, invoice_payload
+        `;
+
+        const insertInvoice = this.db.prepare(sql);
         const result = await insertInvoice.get(
-          orderId, userId, productId, amount, currency, 'pending',
-          payload, address
+          orderId,
+          userId,
+          productId,
+          amountParsed,
+          currency,
+          payload,
+          address
         );
 
-        console.log('[TON INVOICE] Успешно создан инвойс:', { 
-          id: result.id, 
-          orderId, 
-          url: tonDeepLink, 
-          qr: qrUrl 
+        console.log('[TON INVOICE] УСПЕШНО:', {
+          id: result.id,
+          orderId,
+          userId,
+          amount: amountParsed,
+          payload,
+          url: tonDeepLink,
+          qr: qrUrl
         });
 
         return {
-          invoiceId: result.id,
           id: result.id,
-          address,
-          amount: parseFloat(amount),
+          invoiceId: result.id,
+          orderId,
+          userId,
+          amount: amountParsed,
           amountNano,
-          payload,
-          url: tonDeepLink,
-          qr: qrUrl,
           currency,
-          orderId
+          payload,
+          address,
+          url: tonDeepLink,
+          qr: qrUrl
         };
       }
       

@@ -1438,17 +1438,11 @@ app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req
     
     res.json({
       success: true,
-      invoice: {
-        id: invoice.invoiceId,
-        payload: invoice.payload,
-        address: invoice.address,
-        amount: invoice.amount,
-        amountNano: invoice.amountNano,
-        currency: invoice.currency,
-        expiresAt: invoice.expiresAt,
-        url: invoice.url,  // TON deep link
-        qr: invoice.qr     // QR-код URL
-      }
+      invoice: invoice,
+      url: invoice.url,
+      qr: invoice.qr,
+      address: invoice.address,
+      amount: invoice.amount
     });
   } catch (error) {
     console.error('Ошибка создания крипто инвойса:', error);
