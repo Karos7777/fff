@@ -1434,6 +1434,8 @@ app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req
 
     const invoice = await paymentService.createCryptoInvoice(orderId, userId, productId, amount, currency);
     
+    console.log('[CRYPTO INVOICE] Invoice created:', invoice);
+    
     res.json({
       success: true,
       invoice: {
@@ -1443,7 +1445,9 @@ app.post('/api/payments/crypto/create-invoice', authMiddlewareWithDB, async (req
         memo: invoice.memo,
         amount: invoice.amount,
         currency: invoice.currency,
-        expiresAt: invoice.expiresAt
+        expiresAt: invoice.expiresAt,
+        url: invoice.url,  // TON deep link
+        amountNano: invoice.amountNano
       }
     });
   } catch (error) {

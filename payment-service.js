@@ -209,7 +209,18 @@ class PaymentService {
   // Создание криптоинвойса с уникальным memo
   async createCryptoInvoice(orderId, userId, productId, amount, currency) {
     try {
-      const payload = `crypto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log('[TON INVOICE] Создание инвойса:', { orderId, userId, productId, amount, currency });
+      
+      // КРИТИЧНО: Проверяем обязательные параметры
+      if (!amount || !currency) {
+        throw new Error('Missing required parameters: amount or currency');
+      }
+      
+      if (!this.tonWalletAddress) {
+        throw new Error('TON_WALLET_ADDRESS not configured in environment variables');
+      }
+      
+      const payload = `order_${orderId}`; // Уникальный payload для webhook
       const memo = `ORDER_${orderId}_${Date.now().toString().slice(-6)}`; // Уникальный memo
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 минут
       
@@ -222,39 +233,54 @@ class PaymentService {
       } else {
         throw new Error('Неподдерживаемая валюта');
       }
+      
+      // Конвертируем в nano-TON для TON
+      let amountNano = amount;
+      if (currency === 'TON') {
+        amountNano = Math.round(parseFloat(amount) * 1_000_000_000);
+        console.log('[TON INVOICE] Amount in nano:', amountNano);
+      }
 
-      // Сохраняем в БД с memo
+      // Сохраняем в БД с memo (PostgreSQL)
       const insertInvoice = this.db.prepare(`
         INSERT INTO invoices (
           order_id, user_id, product_id, amount, currency, status,
           invoice_payload, crypto_address, crypto_memo, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id
       `);
       
-      const result = insertInvoice.run(
+      const result = await insertInvoice.get(
         orderId, userId, productId, amount, currency, 'pending',
         payload, address, memo, expiresAt.toISOString()
       );
 
-      console.log(`✅ Создан крипто инвойс #${result.lastInsertRowid}:`);
+      console.log(`✅ Создан крипто инвойс #${result.id}:`);
       console.log(`   - Заказ: #${orderId}`);
       console.log(`   - Сумма: ${amount} ${currency}`);
       console.log(`   - Memo: ${memo}`);
       console.log(`   - Адрес: ${address}`);
       console.log(`   - Истекает: ${expiresAt.toLocaleString()}`);
+      
+      // Генерируем TON URL для оплаты
+      const tonUrl = `ton://transfer/${address}?amount=${amountNano}&text=${encodeURIComponent(memo)}`;
+      
+      console.log('[TON INVOICE] Payment URL:', tonUrl);
 
       return {
-        id: result.lastInsertRowid,
+        invoiceId: result.id,
         payload,
         address,
         memo,
         amount,
         currency,
         expiresAt,
-        orderId
+        orderId,
+        url: tonUrl,  // TON deep link
+        amountNano: currency === 'TON' ? amountNano : null
       };
     } catch (error) {
-      console.error('Ошибка создания крипто инвойса:', error);
+      console.error('❌ Ошибка создания крипто инвойса:', error);
       throw error;
     }
   }
