@@ -218,7 +218,6 @@ class PaymentService {
         const payload = `order_${orderId}`;
         const address = process.env.TON_WALLET_ADDRESS?.trim();
 
-        // ПРОВЕРКА ВСЕГО
         if (!orderId || !userId || !amountParsed || !address) {
           throw new Error('TON: missing orderId, userId, amount, or TON_WALLET_ADDRESS');
         }
@@ -230,24 +229,24 @@ class PaymentService {
         console.log('[TON INVOICE] Deep link:', tonDeepLink);
         console.log('[TON INVOICE] QR URL:', qrUrl);
 
-        // 100% СОВМЕСТИМО с схемой invoices
+        // ТОЧНО ПО СХЕМЕ: 7 колонок, 6 значений (status='pending' внутри)
         const sql = `
           INSERT INTO invoices 
-            (order_id, user_id, product_id, amount, currency, status, invoice_payload, crypto_address)
+            (order_id, user_id, amount, currency, status, payment_url, invoice_payload)
           VALUES 
-            ($1, $2, $3, $4, $5, 'pending', $6, $7)
-          RETURNING id, invoice_payload
+            ($1, $2, $3, $4, 'pending', $5, $6)
+          RETURNING id, invoice_payload, payment_url
         `;
 
+        // Используем this.db напрямую
         const insertInvoice = this.db.prepare(sql);
         const result = await insertInvoice.get(
           orderId,
           userId,
-          productId,
           amountParsed,
           currency,
-          payload,
-          address
+          tonDeepLink,
+          payload
         );
 
         console.log('[TON INVOICE] УСПЕШНО:', {
