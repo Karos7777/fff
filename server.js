@@ -599,12 +599,21 @@ app.get('/api/products', async (req, res) => {
     'Expires': '0'
   });
   try {
+    // Сначала проверим все товары в базе
+    const allProductsResult = await db.query('SELECT id, name, is_active, created_at FROM products ORDER BY created_at DESC');
+    const allProducts = allProductsResult.rows;
+    console.log(`🛍️ [PRODUCTS API] Всего товаров в базе: ${allProducts.length}`);
+    allProducts.forEach(product => {
+      console.log(`   - ${product.name} (ID: ${product.id}) - активен: ${product.is_active}`);
+    });
+    
     // Получаем все активные товары (PostgreSQL async)
     const productsResult = await db.query('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
     const products = productsResult.rows;
-    console.log('📦 [SERVER LOAD] Найдено товаров:', products.length);
+    console.log(`📦 [SERVER LOAD] Найдено активных товаров: ${products.length}`);
     
     if (products.length === 0) {
+      console.log('⚠️ [SERVER LOAD] Нет активных товаров для отображения');
       return res.json(products);
     }
     
@@ -875,6 +884,10 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
     raw_active: is_active
   });
 
+  // Если is_active не задан или пустой, устанавливаем true по умолчанию
+  const finalIsActive = is_active === 'off' ? false : true;
+  console.log(`🔄 [ADMIN] Финальный is_active: ${finalIsActive} (исходное значение: "${is_active}")`);
+
   try {
     const product = await db.run(
       `INSERT INTO products 
@@ -890,14 +903,27 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
         parseInt(price_stars) || 0,
         stockValue,
         infiniteStockBool,
-        isActiveBool,
+        finalIsActive,
         imageUrl,
         file_path || null,
         category
       ]
     );
 
-    console.log('✅ [ADMIN] Товар создан:', product);
+    console.log('✅ [ADMIN] Товар создан успешно:', {
+      id: product.id,
+      name: product.name,
+      is_active: product.is_active,
+      price_ton: product.price_ton
+    });
+    
+    // Проверяем, что товар действительно активен
+    if (product.is_active) {
+      console.log('🟢 [ADMIN] Товар создан как АКТИВНЫЙ - будет отображаться в каталоге');
+    } else {
+      console.log('🔴 [ADMIN] ВНИМАНИЕ: Товар создан как НЕАКТИВНЫЙ - НЕ будет отображаться в каталоге');
+    }
+    
     res.json({ success: true, product });
   } catch (err) {
     console.error('❌ [ADMIN] Ошибка:', err.message);

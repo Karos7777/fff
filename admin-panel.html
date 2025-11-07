@@ -576,14 +576,17 @@
                 document.getElementById('productsContainer').classList.remove('hidden');
                 
                 const token = localStorage.getItem('token') || testToken;
-                const response = await fetch('/api/admin/products', {
+                const timestamp = new Date().getTime();
+                const response = await fetch(`/api/admin/products?_t=${timestamp}`, {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache'
                     }
                 });
 
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('📦 Загружено товаров из админ API:', data.products.length);
                     displayProducts(data.products);
                 } else {
                     throw new Error('Ошибка загрузки товаров');
