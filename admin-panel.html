@@ -199,6 +199,22 @@
                     <label for="productCategory">Категория:</label>
                     <input type="text" id="productCategory" placeholder="general" value="general">
                 </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="productActive" checked> 
+                        Товар активен (отображается в каталоге)
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="productInfinite"> 
+                        Бесконечный запас (не ограничивать количество)
+                    </label>
+                </div>
+                <div class="form-group" id="stockGroup">
+                    <label for="productStock">Количество на складе:</label>
+                    <input type="number" id="productStock" min="0" placeholder="100" value="100">
+                </div>
                 <div style="text-align: center; margin-top: 20px;">
                     <button type="submit" class="btn btn-success">✅ Создать товар</button>
                     <button type="button" class="btn" onclick="closeCreateProductModal()">❌ Отмена</button>
@@ -372,12 +388,26 @@
         document.getElementById('createProductForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            // Получаем значения чекбоксов
+            const isActiveChecked = document.getElementById('productActive').checked;
+            const infiniteStockChecked = document.getElementById('productInfinite').checked;
+            const stockValue = document.getElementById('productStock').value;
+            
             const productData = {
                 name: document.getElementById('productName').value,
                 description: document.getElementById('productDescription').value,
                 price: parseFloat(document.getElementById('productPrice').value),
-                category: document.getElementById('productCategory').value
+                category: document.getElementById('productCategory').value,
+                is_active: isActiveChecked ? 'on' : 'off',
+                infinite_stock: infiniteStockChecked ? 'on' : 'off',
+                stock: infiniteStockChecked ? null : parseInt(stockValue) || 0
             };
+
+            console.log('📦 Отправка данных товара:', {
+                is_active: productData.is_active,
+                infinite_stock: productData.infinite_stock,
+                stock: productData.stock
+            });
 
             try {
                 const token = localStorage.getItem('token') || testToken;
@@ -563,6 +593,16 @@
                 document.getElementById('productsList').innerHTML = '<p>❌ Ошибка загрузки товаров</p>';
             }
         }
+
+        // Обработчик для чекбокса "Бесконечный запас"
+        document.getElementById('productInfinite').addEventListener('change', function() {
+            const stockGroup = document.getElementById('stockGroup');
+            if (this.checked) {
+                stockGroup.style.display = 'none';
+            } else {
+                stockGroup.style.display = 'block';
+            }
+        });
 
         // Закрытие модальных окон по клику вне них
         window.onclick = function(event) {
