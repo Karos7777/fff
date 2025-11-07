@@ -1,7 +1,7 @@
 {
   "url": "https://fff-production-41ca.up.railway.app",
   "name": "TG Magazin Bot",
-  "iconUrl": "https://fff-production-41ca.up.railway.app/uploads/icon.png",
-  "termsOfUseUrl": "https://fff-production-41ca.up.railway.app/terms",
-  "privacyPolicyUrl": "https://fff-production-41ca.up.railway.app/privacy"
+  "iconUrl": "https://fff-production-41ca.up.railway.app/icon.svg",
+  "termsOfUseUrl": "https://fff-production-41ca.up.railway.app/terms.html",
+  "privacyPolicyUrl": "https://fff-production-41ca.up.railway.app/privacy.html"
 }
