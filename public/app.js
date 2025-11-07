@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.5.3';
+const APP_VERSION = '2.5.4';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1016,6 +1016,29 @@ async function loadProducts(forceReload = false) {
     }
 }
 
+// Форматирование цены товара (TON | USDT)
+function formatPrice(product) {
+    const prices = [];
+    
+    // Добавляем цену в TON, если она указана
+    if (product.price_ton && product.price_ton > 0) {
+        prices.push(`${product.price_ton.toFixed(2)} TON`);
+    }
+    
+    // Добавляем цену в USDT, если она указана
+    if (product.price_usdt && product.price_usdt > 0) {
+        prices.push(`${product.price_usdt.toFixed(2)} USDT`);
+    }
+    
+    // Если нет цен в криптовалютах, показываем обычную цену
+    if (prices.length === 0) {
+        return `${(product.price || 0).toFixed(2)} $`;
+    }
+    
+    // Соединяем цены через " | "
+    return prices.join(' | ');
+}
+
 // Обновление поисковых подсказок
 function updateSearchSuggestions() {
     searchSuggestions = products.map(product => product.name);
@@ -1232,9 +1255,9 @@ function renderProducts(productsToRender) {
                     <div class="product-meta">
                         <div class="product-price">
                             ${product.isSale && product.oldPrice ? 
-                                `<span class="product-old-price">${product.oldPrice.toFixed(2)} $</span>` : ''
+                                `<span class="product-old-price">${formatPrice({...product, price_ton: product.oldPrice})}</span>` : ''
                             }
-                            ${product.price.toFixed(2)} $
+                            ${formatPrice(product)}
                         </div>
                         <div class="product-category">${getCategoryName(product.category)}</div>
                     </div>
@@ -1348,7 +1371,7 @@ async function viewProduct(productId) {
             <div class="product-details">
                 <h3>${product.name}</h3>
                 <p>${product.description || 'Описание отсутствует'}</p>
-                <div class="price">${product.price.toFixed(2)} $</div>
+                <div class="price">${formatPrice(product)}</div>
                 
                 <!-- Рейтинг и отзывы -->
                 <div class="product-rating">
