@@ -790,8 +790,8 @@ app.post('/api/orders/:id/expire', authMiddlewareWithDB, async (req, res) => {
     }
     
     // Обновляем статус заказа
-    await db.run(
-      'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
+    await db.query(
+      'UPDATE orders SET status = $1 WHERE id = $2',
       ['expired', orderId]
     );
     
@@ -805,8 +805,16 @@ app.post('/api/orders/:id/expire', authMiddlewareWithDB, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ [EXPIRE] Ошибка отмены заказа:', error);
-    res.status(500).json({ error: 'Ошибка отмены заказа: ' + error.message });
+    console.error('❌ [EXPIRE] Ошибка отмены заказа:', {
+      error: error.message,
+      stack: error.stack,
+      orderId: req.params.id,
+      userId: req.user?.id
+    });
+    res.status(500).json({ 
+      error: 'Ошибка отмены заказа: ' + error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
