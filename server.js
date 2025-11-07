@@ -86,22 +86,21 @@ app.get('/admin-panel.html', (req, res) => {
 });
 
 // Простой тест для создания заказа без JWT (только для отладки)
-app.post('/api/test-order', (req, res) => {
+app.post('/api/test-order', async (req, res) => {
   try {
     const { product_id, user_id = 1 } = req.body;
 
-    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
-    const product = getProduct.get(product_id);
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [product_id]);
+    const product = productResult.rows[0];
     
     if (!product) {
       return res.status(400).json({ error: 'Товар не найден' });
     }
     
-    const insertOrder = dbLegacy.prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
-    const result = insertOrder.run(user_id, product_id);
+    const orderResult = await db.run('INSERT INTO orders (user_id, product_id) VALUES ($1, $2) RETURNING id', [user_id, product_id]);
     
     res.json({ 
-      id: result.lastInsertRowid, 
+      id: orderResult.id, 
       message: 'Тестовый заказ создан успешно',
       product: product.name
     });
@@ -601,8 +600,8 @@ app.get('/api/products', async (req, res) => {
   });
   try {
     // Получаем все активные товары (PostgreSQL async)
-    const getProducts = dbLegacy.prepare('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
-    const products = await getProducts.all();
+    const productsResult = await db.query('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
+    const products = productsResult.rows;
     console.log('📦 [SERVER LOAD] Найдено товаров:', products.length);
     
     if (products.length === 0) {
@@ -612,8 +611,8 @@ app.get('/api/products', async (req, res) => {
     // Для каждого товара считаем рейтинг и количество отзывов
     const productIds = products.map(p => p.id);
     const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
-    const getRatings = dbLegacy.prepare(`SELECT product_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id IN (${placeholders}) GROUP BY product_id`);
-    const ratings = await getRatings.all(...productIds);
+    const ratingsResult = await db.query(`SELECT product_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id IN (${placeholders}) GROUP BY product_id`, productIds);
+    const ratings = ratingsResult.rows;
     
     // Создаем карту рейтингов
     const ratingMap = {};
@@ -644,15 +643,15 @@ app.get('/api/products', async (req, res) => {
 // Получение товара по ID
 app.get('/api/products/:id', async (req, res) => {
   try {
-    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ? AND is_active = true');
-    const product = await getProduct.get(req.params.id);
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1 AND is_active = true', [req.params.id]);
+    const product = productResult.rows[0];
     
     if (!product) {
       return res.status(404).json({ error: 'Товар не найден' });
     }
     
-    const getRating = dbLegacy.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id = ?');
-    const rating = await getRating.get(product.id);
+    const ratingResult = await db.query('SELECT AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id = $1', [product.id]);
+    const rating = ratingResult.rows[0];
     
     res.json({
       ...product,
@@ -740,7 +739,7 @@ app.get('/api/user/role', authMiddlewareWithDB, (req, res) => {
 // Примечание: Эндпоинт POST /api/admin/products уже определён выше (строка 959) с поддержкой загрузки изображений
 
 // Удаление товара (только для админов)
-app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
+app.delete('/api/admin/products/:id', adminMiddleware, async (req, res) => {
   console.log('\n🗑️ [SERVER DELETE] ========== НАЧАЛО УДАЛЕНИЯ ТОВАРА ==========');
   try {
     const productId = parseInt(req.params.id);
@@ -748,8 +747,8 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     console.log('🗑️ [SERVER DELETE] User:', req.user);
     
     // Проверяем, существует ли товар
-    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
-    const product = getProduct.get(productId);
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [productId]);
+    const product = productResult.rows[0];
     console.log('🗑️ [SERVER DELETE] Найден товар:', product);
     
     if (!product) {
@@ -758,43 +757,37 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
     }
     
     // Проверяем, есть ли активные заказы у товара
-    const getActiveOrders = dbLegacy.prepare(`
+    const activeOrdersResult = await db.query(`
       SELECT COUNT(*) as count FROM orders 
-      WHERE product_id = ? AND status IN ('pending', 'pending_crypto', 'paid')
-    `);
-    const activeOrders = getActiveOrders.get(productId);
+      WHERE product_id = $1 AND status IN ('pending', 'pending_crypto', 'paid')
+    `, [productId]);
+    const activeOrders = activeOrdersResult.rows[0];
     console.log('🗑️ [SERVER DELETE] Активных заказов:', activeOrders.count);
     
-    // Удаляем связанные данные в правильном порядке (включая активные заказы)
-    const deleteOrders = dbLegacy.prepare('DELETE FROM orders WHERE product_id = ?');
-    const deleteProduct = dbLegacy.prepare('DELETE FROM products WHERE id = ?');
+    console.log('🗑️ [SERVER DELETE] Начало удаления...');
     
-    console.log('🗑️ [SERVER DELETE] Начало транзакции удаления...');
-    
-    // Выполняем удаление в транзакции
-    const deleteTransaction = dbLegacy.transaction(() => {
+    // Удаляем связанные данные в правильном порядке
+    try {
       // Удаляем отзывы если таблица существует
-      try {
-        const deleteReviews = dbLegacy.prepare('DELETE FROM reviews WHERE product_id = ?');
-        const reviewsResult = deleteReviews.run(productId);
-        console.log('🗑️ [SERVER DELETE] Удалено отзывов:', reviewsResult.changes);
-      } catch (e) {
-        console.log('⚠️ [SERVER DELETE] Таблица reviews не существует, пропускаем');
-      }
-      
-      const ordersResult = deleteOrders.run(productId);
-      console.log('🗑️ [SERVER DELETE] Удалено заказов:', ordersResult.changes);
-      
-      const productResult = deleteProduct.run(productId);
-      console.log('🗑️ [SERVER DELETE] Удалено товаров:', productResult.changes);
-    });
+      await db.run('DELETE FROM reviews WHERE product_id = $1', [productId]);
+      console.log('🗑️ [SERVER DELETE] Удалены отзывы');
+    } catch (e) {
+      console.log('⚠️ [SERVER DELETE] Таблица reviews не существует или ошибка:', e.message);
+    }
     
-    deleteTransaction();
-    console.log('✅ [SERVER DELETE] Транзакция успешно завершена');
+    // Удаляем заказы
+    await db.run('DELETE FROM orders WHERE product_id = $1', [productId]);
+    console.log('🗑️ [SERVER DELETE] Удалены заказы');
+    
+    // Удаляем товар
+    await db.run('DELETE FROM products WHERE id = $1', [productId]);
+    console.log('🗑️ [SERVER DELETE] Удален товар');
+    
+    console.log('✅ [SERVER DELETE] Удаление успешно завершено');
     
     // Проверяем, что товар действительно удален
-    const verifyDelete = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
-    const stillExists = verifyDelete.get(productId);
+    const verifyResult = await db.query('SELECT * FROM products WHERE id = $1', [productId]);
+    const stillExists = verifyResult.rows[0];
     
     if (stillExists) {
       console.error('❌ [SERVER DELETE] ОШИБКА: Товар все еще существует в БД!');
@@ -818,9 +811,9 @@ app.delete('/api/admin/products/:id', adminMiddleware, (req, res) => {
 });
 
 // Получение всех товаров для админа
-app.get('/api/admin/products', adminMiddleware, (req, res) => {
+app.get('/api/admin/products', adminMiddleware, async (req, res) => {
   try {
-    const getProducts = dbLegacy.prepare(`
+    const result = await db.query(`
       SELECT 
         p.*,
         COUNT(o.id) as total_orders,
@@ -832,7 +825,7 @@ app.get('/api/admin/products', adminMiddleware, (req, res) => {
       ORDER BY p.created_at DESC
     `);
     
-    const products = getProducts.all();
+    const products = result.rows;
     
     res.json({ success: true, products });
   } catch (error) {
