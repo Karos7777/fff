@@ -1,4 +1,4 @@
-console.log('🚀 ADMIN.JS ЗАГРУЖЕН!');
+console.log('🚀 ADMIN.JS ЗАГРУЖЕН! Версия 2.5.3');
 
 // Глобальные переменные
 let currentAdmin = null;
