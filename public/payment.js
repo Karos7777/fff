@@ -820,61 +820,110 @@ class PaymentManager {
   openTelegramWallet(address, amount, memo) {
     console.log('💳 [WALLET] Открытие Telegram кошелька:', { address, amount, memo });
     
+    // Конвертируем сумму в наноTON
+    const amountInNano = Math.floor(parseFloat(amount) * 1e9);
+    
+    // Определяем платформу
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isDesktop = !isMobile;
+    
+    console.log('📱 [WALLET] Платформа:', { isMobile, isDesktop });
+    
     // Проверяем, что мы в Telegram Web App
     if (window.Telegram && window.Telegram.WebApp) {
       try {
         console.log('✅ [WALLET] Telegram WebApp доступен');
         
-        // Создаем deep link для TON кошелька
-        const amountInNano = Math.floor(parseFloat(amount) * 1e9); // Конвертируем в наноTON
-        const tonLink = `ton://transfer/${address}?amount=${amountInNano}&text=${encodeURIComponent(memo)}`;
-        
-        console.log('🔗 [WALLET] TON deep link:', tonLink);
-        
-        // Пытаемся открыть через Telegram WebApp
-        window.Telegram.WebApp.openLink(tonLink);
-        
-        // Показываем сообщение пользователю
-        this.showToast('🚀 Открываем кошелёк Telegram...');
+        // Для мобильных и десктопных версий используем разные подходы
+        if (isMobile) {
+          // На мобильных используем deep link
+          const walletLink = `https://t.me/wallet?start=transfer_${address}_${amountInNano}_${encodeURIComponent(memo)}`;
+          window.Telegram.WebApp.openTelegramLink ? 
+            window.Telegram.WebApp.openTelegramLink(walletLink) : 
+            window.Telegram.WebApp.openLink(walletLink);
+          this.showToast('🚀 Открываем встроенный кошелёк Telegram...');
+        } else {
+          // На десктопе тоже используем ссылку на @wallet
+          const walletLink = `https://t.me/wallet?start=transfer_${address}_${amountInNano}_${encodeURIComponent(memo)}`;
+          window.Telegram.WebApp.openLink(walletLink);
+          this.showToast('🚀 Открываем кошелёк Telegram...');
+        }
         
       } catch (error) {
         console.error('❌ [WALLET] Ошибка открытия через Telegram WebApp:', error);
-        this.fallbackToDeepLink(address, amount, memo);
+        this.fallbackToTelegramWallet(address, amount, memo);
       }
     } else {
       console.log('⚠️ [WALLET] Telegram WebApp недоступен, используем fallback');
-      this.fallbackToDeepLink(address, amount, memo);
+      this.fallbackToTelegramWallet(address, amount, memo);
     }
   }
 
-  // Fallback метод для открытия кошелька через deep links
-  fallbackToDeepLink(address, amount, memo) {
+  // Fallback метод для открытия Telegram кошелька
+  fallbackToTelegramWallet(address, amount, memo) {
     const amountInNano = Math.floor(parseFloat(amount) * 1e9);
     
-    // Создаем различные deep links
-    const tonLink = `ton://transfer/${address}?amount=${amountInNano}&text=${encodeURIComponent(memo)}`;
-    const tonkeeperLink = `https://app.tonkeeper.com/transfer/${address}?amount=${amountInNano}&text=${encodeURIComponent(memo)}`;
+    // Пробуем различные способы открытия встроенного кошелька
+    const telegramWalletLinks = [
+      `https://t.me/wallet?start=transfer_${address}_${amountInNano}_${encodeURIComponent(memo)}`,
+      `tg://resolve?domain=wallet&start=transfer_${address}_${amountInNano}_${encodeURIComponent(memo)}`,
+      `https://t.me/wallet/start?startapp=transfer-${address}-${amountInNano}-${encodeURIComponent(memo)}`
+    ];
     
-    console.log('🔗 [WALLET] Fallback links:', { tonLink, tonkeeperLink });
+    console.log('🔗 [WALLET] Fallback Telegram Wallet links:', telegramWalletLinks);
     
-    // Пытаемся открыть через deep link
+    // Пытаемся открыть через различные Telegram ссылки
     try {
-      window.location.href = tonLink;
-      this.showToast('🚀 Открываем TON кошелёк...');
+      // Основной способ - через tg:// протокол
+      window.location.href = telegramWalletLinks[0];
+      this.showToast('🚀 Открываем встроенный кошелёк Telegram...');
       
-      // Fallback через Tonkeeper через 2 секунды
+      // Fallback через веб-версию через 1.5 секунды
       setTimeout(() => {
         if (!document.hidden) {
-          console.log('🔄 [WALLET] Открываем Tonkeeper как fallback');
-          window.open(tonkeeperLink, '_blank');
-          this.showToast('📱 Если кошелёк не открылся, используйте QR код');
+          console.log('🔄 [WALLET] Пробуем веб-версию кошелька');
+          window.open(telegramWalletLinks[1], '_blank');
         }
-      }, 2000);
+      }, 1500);
+      
+      // Последний fallback - показываем инструкцию
+      setTimeout(() => {
+        if (!document.hidden) {
+          this.showWalletInstructions(address, amount, memo);
+        }
+      }, 3000);
       
     } catch (error) {
       console.error('❌ [WALLET] Ошибка fallback:', error);
-      this.showToast('❌ Не удалось открыть кошелёк. Используйте QR код');
+      this.showWalletInstructions(address, amount, memo);
     }
+  }
+
+  // Создание Telegram инвойса (если поддерживается)
+  createTelegramInvoice(address, amount, memo) {
+    try {
+      console.log('📄 [WALLET] Создание Telegram инвойса');
+      
+      // Здесь должна быть логика создания инвойса через бота
+      // Пока показываем инструкцию
+      this.showWalletInstructions(address, amount, memo);
+      
+    } catch (error) {
+      console.error('❌ [WALLET] Ошибка создания инвойса:', error);
+      this.showWalletInstructions(address, amount, memo);
+    }
+  }
+
+  // Показ инструкций по использованию кошелька
+  showWalletInstructions(address, amount, memo) {
+    this.showToast('💡 Откройте @wallet в Telegram и отправьте платеж вручную');
+    
+    // Можно добавить модальное окно с подробными инструкциями
+    console.log('📋 [WALLET] Данные для ручного платежа:', {
+      address,
+      amount: `${amount} TON`,
+      memo
+    });
   }
 
   // Проверка доступности Telegram WebApp
