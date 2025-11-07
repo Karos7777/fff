@@ -847,7 +847,7 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
   try {
     const { name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, file_path } = req.body;
     
-    console.log('📦 [ADMIN] Данные товара:', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
+    console.log('📦 [ADMIN] Данные товара (raw):', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
     
     // Обработка изображения
     let imageUrl = null;
@@ -856,12 +856,19 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
       console.log('🖼️ [ADMIN] Загружено изображение:', imageUrl);
     }
     
-    // Преобразуем чекбоксы
-    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true;
-    const isActiveBool = is_active === 'true' || is_active === true || is_active === '1';
-    const stockValue = infiniteStockBool ? 0 : parseInt(stock) || 0;
+    // === ПРАВИЛЬНАЯ ОБРАБОТКА ЧЕКБОКСОВ ===
+    // Принимаем 'true'/'false' строки или 'on' от формы
+    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true || infinite_stock === 'on';
+    const isActiveBool = is_active === 'true' || is_active === true || is_active === 'on';
+    const stockValue = infiniteStockBool ? 0 : (parseInt(stock) || 0);
     
-    console.log('✅ [ADMIN] Обработанные значения:', { infiniteStockBool, isActiveBool, stockValue });
+    console.log('✅ [ADMIN] Обработанные значения:', { 
+      infiniteStockBool, 
+      isActiveBool, 
+      stockValue,
+      infinite_stock_raw: infinite_stock,
+      is_active_raw: is_active
+    });
     
     // Используем новый db с RETURNING
     const product = await db.run(
@@ -905,7 +912,7 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), asyn
     const productId = parseInt(req.params.id);
     const { name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, file_path } = req.body;
     
-    console.log('📦 [ADMIN] Данные для обновления:', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
+    console.log('📦 [ADMIN] Данные для обновления (raw):', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
     
     // Получаем текущий товар
     const currentProduct = await db.get('SELECT * FROM products WHERE id = $1', [productId]);
@@ -921,10 +928,19 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), asyn
       console.log('🖼️ [ADMIN] Обновлено изображение:', imageUrl);
     }
     
-    // Преобразуем чекбоксы
-    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true;
-    const isActiveBool = is_active === 'true' || is_active === true || is_active === '1';
-    const stockValue = infiniteStockBool ? 0 : parseInt(stock) || 0;
+    // === ПРАВИЛЬНАЯ ОБРАБОТКА ЧЕКБОКСОВ ===
+    // Принимаем 'true'/'false' строки или 'on' от формы
+    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true || infinite_stock === 'on';
+    const isActiveBool = is_active === 'true' || is_active === true || is_active === 'on';
+    const stockValue = infiniteStockBool ? 0 : (parseInt(stock) || 0);
+    
+    console.log('✅ [ADMIN] Обработанные значения:', { 
+      infiniteStockBool, 
+      isActiveBool, 
+      stockValue,
+      infinite_stock_raw: infinite_stock,
+      is_active_raw: is_active
+    });
     
     // Используем новый db с RETURNING
     const product = await db.run(

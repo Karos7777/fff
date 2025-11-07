@@ -393,20 +393,30 @@ async function handleProductSubmit(e) {
     e.preventDefault();
     try {
         const formData = new FormData(e.target);
-        // Handle checkbox values properly
-        const infiniteCheckbox = document.getElementById('productInfinite');
-        const activeCheckbox = document.getElementById('productActive');
-        // FormData doesn't include unchecked checkboxes, so we need to explicitly set them
-        if (!formData.has('infinite_stock')) {
-            formData.append('infinite_stock', 'false');
-        }
-        if (!formData.has('is_active')) {
-            formData.append('is_active', 'false');
-        }
+        
+        // === ПРАВИЛЬНАЯ ОБРАБОТКА ЧЕКБОКСОВ ===
+        // Чекбоксы отправляют 'on' когда отмечены, undefined когда нет
+        const infiniteStockBool = formData.get('infinite_stock') === 'on';
+        const isActiveBool = formData.get('is_active') === 'on';
+        
+        console.log('📦 [ADMIN FORM] Чекбоксы:', { 
+            infinite_stock_raw: formData.get('infinite_stock'),
+            is_active_raw: formData.get('is_active'),
+            infiniteStockBool, 
+            isActiveBool 
+        });
+        
+        // Заменяем значения чекбоксов на boolean строки
+        formData.set('infinite_stock', infiniteStockBool ? 'true' : 'false');
+        formData.set('is_active', isActiveBool ? 'true' : 'false');
+        
         const url = editingProductId ? 
             `/api/admin/products/${editingProductId}` : 
             '/api/admin/products';
         const method = editingProductId ? 'PUT' : 'POST';
+        
+        console.log('📤 [ADMIN FORM] Отправка:', { url, method, infinite_stock: formData.get('infinite_stock'), is_active: formData.get('is_active') });
+        
         // Use makeAuthRequest with FormData
         const result = await makeAuthRequest(url, {
             method: method,
