@@ -55,6 +55,32 @@ app.use('/api', (req, res, next) => {
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
+// Явные маршруты для важных файлов TON Connect
+app.get('/tonconnect-manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.sendFile(path.join(__dirname, 'public', 'tonconnect-manifest.json'));
+});
+
+app.get('/icon.svg', (req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.sendFile(path.join(__dirname, 'public', 'icon.svg'));
+});
+
+app.get('/terms.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+});
+
+app.get('/privacy.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
+// Favicon
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Content-Type', 'image/x-icon');
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
 // Тестовый файл для отладки платежей
 app.get('/test-payment.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'test-payment.html'));
@@ -737,6 +763,50 @@ app.post('/api/create-payment', authMiddlewareWithDB, async (req, res) => {
   } catch (error) {
     console.error('❌ [CREATE-PAYMENT] Ошибка создания платежа:', error);
     res.status(500).json({ error: 'Ошибка создания платежа: ' + error.message });
+  }
+});
+
+// Эндпоинт для отмены/истечения заказа
+app.post('/api/orders/:id/expire', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const userId = req.user.id;
+    
+    console.log(`⏰ [EXPIRE] Отмена заказа #${orderId} пользователем ${userId}`);
+    
+    // Проверяем, что заказ существует и принадлежит пользователю
+    const orderResult = await db.query(
+      'SELECT * FROM orders WHERE id = $1 AND user_id = $2', 
+      [orderId, userId]
+    );
+    
+    const order = orderResult.rows[0];
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    if (order.status === 'paid') {
+      return res.status(400).json({ error: 'Нельзя отменить оплаченный заказ' });
+    }
+    
+    // Обновляем статус заказа
+    await db.run(
+      'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
+      ['expired', orderId]
+    );
+    
+    console.log(`✅ [EXPIRE] Заказ #${orderId} успешно отменён`);
+    
+    res.json({
+      success: true,
+      message: 'Заказ успешно отменён',
+      order_id: orderId,
+      status: 'expired'
+    });
+    
+  } catch (error) {
+    console.error('❌ [EXPIRE] Ошибка отмены заказа:', error);
+    res.status(500).json({ error: 'Ошибка отмены заказа: ' + error.message });
   }
 });
 
