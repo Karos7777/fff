@@ -1,3 +1,5 @@
+console.log('🚀 ADMIN.JS ЗАГРУЖЕН!');
+
 // Глобальные переменные
 let currentAdmin = null;
 let products = [];
@@ -7,6 +9,7 @@ let editingProductId = null;
 
 // Инициализация админ панели
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('📋 [ADMIN] DOMContentLoaded - инициализация админки');
     initializeAdminPanel();
 });
 
@@ -390,6 +393,7 @@ function editProduct(productId) {
 
 // Обработка отправки формы товара
 async function handleProductSubmit(e) {
+    console.log('📝 [ADMIN FORM] Форма отправлена!');
     e.preventDefault();
     try {
         const formData = new FormData(e.target);
@@ -399,6 +403,11 @@ async function handleProductSubmit(e) {
         // Нужно читать напрямую из DOM через .checked
         const infiniteStockCheckbox = document.getElementById('productInfinite');
         const isActiveCheckbox = document.getElementById('productActive');
+        
+        console.log('🔍 [ADMIN FORM] Найдены чекбоксы:', { 
+            infiniteStockCheckbox: !!infiniteStockCheckbox,
+            isActiveCheckbox: !!isActiveCheckbox
+        });
         
         const infiniteStockChecked = infiniteStockCheckbox ? infiniteStockCheckbox.checked : false;
         const isActiveChecked = isActiveCheckbox ? isActiveCheckbox.checked : false;
