@@ -394,28 +394,30 @@ async function handleProductSubmit(e) {
     try {
         const formData = new FormData(e.target);
         
-        // === ПРАВИЛЬНАЯ ОБРАБОТКА ЧЕКБОКСОВ ===
-        // Чекбоксы отправляют 'on' когда отмечены, undefined когда нет
-        const infiniteStockBool = formData.get('infinite_stock') === 'on';
-        const isActiveBool = formData.get('is_active') === 'on';
+        // === КРИТИЧНО: ОБРАБОТКА ЧЕКБОКСОВ ===
+        // FormData НЕ включает unchecked чекбоксы!
+        // Checked чекбокс: formData.get('is_active') === 'on'
+        // Unchecked чекбокс: formData.get('is_active') === null
+        
+        // Явно устанавливаем значения для чекбоксов
+        const infiniteStockChecked = formData.get('infinite_stock') === 'on';
+        const isActiveChecked = formData.get('is_active') === 'on';
+        
+        // Удаляем старые значения и устанавливаем новые
+        formData.delete('infinite_stock');
+        formData.delete('is_active');
+        formData.append('infinite_stock', infiniteStockChecked ? 'on' : 'off');
+        formData.append('is_active', isActiveChecked ? 'on' : 'off');
         
         console.log('📦 [ADMIN FORM] Чекбоксы:', { 
-            infinite_stock_raw: formData.get('infinite_stock'),
-            is_active_raw: formData.get('is_active'),
-            infiniteStockBool, 
-            isActiveBool 
+            infinite_stock: formData.get('infinite_stock'),
+            is_active: formData.get('is_active')
         });
-        
-        // Заменяем значения чекбоксов на boolean строки
-        formData.set('infinite_stock', infiniteStockBool ? 'true' : 'false');
-        formData.set('is_active', isActiveBool ? 'true' : 'false');
         
         const url = editingProductId ? 
             `/api/admin/products/${editingProductId}` : 
             '/api/admin/products';
         const method = editingProductId ? 'PUT' : 'POST';
-        
-        console.log('📤 [ADMIN FORM] Отправка:', { url, method, infinite_stock: formData.get('infinite_stock'), is_active: formData.get('is_active') });
         
         // Use makeAuthRequest with FormData
         const result = await makeAuthRequest(url, {

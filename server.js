@@ -844,76 +844,96 @@ app.get('/api/admin/products', adminMiddleware, (req, res) => {
 // Создание нового товара (только для админов)
 app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (req, res) => {
   console.log('\n➕ [ADMIN] Создание нового товара');
+  
+  const {
+    name,
+    description = '',
+    price = 0,
+    price_ton = 0,
+    price_usdt = 0,
+    price_stars = 0,
+    file_path,
+    category = 'general',
+    infinite_stock,  // 'on' или 'off'
+    is_active,       // 'on' или 'off'
+    stock
+  } = req.body;
+
+  console.log('📦 [ADMIN] Данные (raw):', { name, price_ton, infinite_stock, is_active, stock });
+
+  // Обработка изображения
+  let imageUrl = null;
+  if (req.file) {
+    imageUrl = `/uploads/${req.file.filename}`;
+    console.log('🖼️ [ADMIN] Загружено изображение:', imageUrl);
+  }
+
+  // === КРИТИЧНО: ПРЕОБРАЗУЕМ ЧЕКБОКСЫ ===
+  // 'on' = checked, 'off' = unchecked
+  const infiniteStockBool = infinite_stock === 'on' || infinite_stock === true;
+  const isActiveBool = is_active === 'on' || is_active === true;
+  const stockValue = infiniteStockBool ? null : (parseInt(stock) || 0);
+
+  console.log('✅ [ADMIN] Обработано:', { 
+    infiniteStockBool, 
+    isActiveBool, 
+    stockValue,
+    raw_infinite: infinite_stock,
+    raw_active: is_active
+  });
+
   try {
-    const { name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, file_path } = req.body;
-    
-    console.log('📦 [ADMIN] Данные товара (raw):', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
-    
-    // Обработка изображения
-    let imageUrl = null;
-    if (req.file) {
-      imageUrl = `/uploads/${req.file.filename}`;
-      console.log('🖼️ [ADMIN] Загружено изображение:', imageUrl);
-    }
-    
-    // === ПРАВИЛЬНАЯ ОБРАБОТКА ЧЕКБОКСОВ ===
-    // Принимаем 'true'/'false' строки или 'on' от формы
-    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true || infinite_stock === 'on';
-    const isActiveBool = is_active === 'true' || is_active === true || is_active === 'on';
-    const stockValue = infiniteStockBool ? 0 : (parseInt(stock) || 0);
-    
-    console.log('✅ [ADMIN] Обработанные значения:', { 
-      infiniteStockBool, 
-      isActiveBool, 
-      stockValue,
-      infinite_stock_raw: infinite_stock,
-      is_active_raw: is_active
-    });
-    
-    // Используем новый db с RETURNING
     const product = await db.run(
       `INSERT INTO products 
-       (name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, image_url, file_path)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, image_url, file_path, category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id, name, price_ton, infinite_stock, is_active`,
       [
         name,
-        description || '',
+        description,
         parseFloat(price) || 0,
-        parseFloat(price_ton) || null,
-        parseFloat(price_usdt) || null,
-        parseInt(price_stars) || null,
+        parseFloat(price_ton) || 0,
+        parseFloat(price_usdt) || 0,
+        parseInt(price_stars) || 0,
         stockValue,
         infiniteStockBool,
         isActiveBool,
         imageUrl,
-        file_path || null
+        file_path || null,
+        category
       ]
     );
-    
+
     console.log('✅ [ADMIN] Товар создан:', product);
-    
-    res.json({ 
-      success: true, 
-      message: 'Товар успешно создан',
-      productId: product.id,
-      product: product
-    });
-  } catch (error) {
-    console.error('❌ [ADMIN] Ошибка создания товара:', error);
-    res.status(500).json({ error: 'Ошибка создания товара: ' + error.message });
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error('❌ [ADMIN] Ошибка:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Обновление товара (только для админов)
 app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), async (req, res) => {
   console.log('\n✏️ [ADMIN] Обновление товара #' + req.params.id);
+  
+  const productId = parseInt(req.params.id);
+  const {
+    name,
+    description = '',
+    price = 0,
+    price_ton = 0,
+    price_usdt = 0,
+    price_stars = 0,
+    file_path,
+    category = 'general',
+    infinite_stock,  // 'on' или 'off'
+    is_active,       // 'on' или 'off'
+    stock
+  } = req.body;
+
+  console.log('📦 [ADMIN] Данные (raw):', { name, price_ton, infinite_stock, is_active, stock });
+
   try {
-    const productId = parseInt(req.params.id);
-    const { name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, file_path } = req.body;
-    
-    console.log('📦 [ADMIN] Данные для обновления (raw):', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
-    
     // Получаем текущий товар
     const currentProduct = await db.get('SELECT * FROM products WHERE id = $1', [productId]);
     
@@ -928,53 +948,47 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), asyn
       console.log('🖼️ [ADMIN] Обновлено изображение:', imageUrl);
     }
     
-    // === ПРАВИЛЬНАЯ ОБРАБОТКА ЧЕКБОКСОВ ===
-    // Принимаем 'true'/'false' строки или 'on' от формы
-    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true || infinite_stock === 'on';
-    const isActiveBool = is_active === 'true' || is_active === true || is_active === 'on';
-    const stockValue = infiniteStockBool ? 0 : (parseInt(stock) || 0);
+    // === КРИТИЧНО: ПРЕОБРАЗУЕМ ЧЕКБОКСЫ ===
+    const infiniteStockBool = infinite_stock === 'on' || infinite_stock === true;
+    const isActiveBool = is_active === 'on' || is_active === true;
+    const stockValue = infiniteStockBool ? null : (parseInt(stock) || 0);
     
-    console.log('✅ [ADMIN] Обработанные значения:', { 
+    console.log('✅ [ADMIN] Обработано:', { 
       infiniteStockBool, 
       isActiveBool, 
       stockValue,
-      infinite_stock_raw: infinite_stock,
-      is_active_raw: is_active
+      raw_infinite: infinite_stock,
+      raw_active: is_active
     });
     
-    // Используем новый db с RETURNING
     const product = await db.run(
       `UPDATE products 
        SET name = $1, description = $2, price = $3, price_ton = $4, price_usdt = $5, price_stars = $6, 
-           stock = $7, infinite_stock = $8, is_active = $9, image_url = $10, file_path = $11
-       WHERE id = $12
+           stock = $7, infinite_stock = $8, is_active = $9, image_url = $10, file_path = $11, category = $12
+       WHERE id = $13
        RETURNING id, name, price_ton, infinite_stock, is_active`,
       [
         name,
-        description || '',
+        description,
         parseFloat(price) || 0,
-        parseFloat(price_ton) || null,
-        parseFloat(price_usdt) || null,
-        parseInt(price_stars) || null,
+        parseFloat(price_ton) || 0,
+        parseFloat(price_usdt) || 0,
+        parseInt(price_stars) || 0,
         stockValue,
         infiniteStockBool,
         isActiveBool,
         imageUrl,
         file_path || currentProduct.file_path,
+        category,
         productId
       ]
     );
     
     console.log('✅ [ADMIN] Товар обновлён:', product);
-    
-    res.json({ 
-      success: true, 
-      message: 'Товар успешно обновлён',
-      product: product
-    });
-  } catch (error) {
-    console.error('❌ [ADMIN] Ошибка обновления товара:', error);
-    res.status(500).json({ error: 'Ошибка обновления товара: ' + error.message });
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error('❌ [ADMIN] Ошибка:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
