@@ -394,22 +394,29 @@ async function handleProductSubmit(e) {
     try {
         const formData = new FormData(e.target);
         
-        // === КРИТИЧНО: ОБРАБОТКА ЧЕКБОКСОВ ===
-        // FormData НЕ включает unchecked чекбоксы!
-        // Checked чекбокс: formData.get('is_active') === 'on'
-        // Unchecked чекбокс: formData.get('is_active') === null
+        // === КРИТИЧНО: ЯВНО ЧИТАЕМ ЧЕКБОКСЫ ИЗ DOM ===
+        // FormData.get() возвращает null для unchecked!
+        // Нужно читать напрямую из DOM через .checked
+        const infiniteStockCheckbox = document.getElementById('productInfinite');
+        const isActiveCheckbox = document.getElementById('productActive');
         
-        // Явно устанавливаем значения для чекбоксов
-        const infiniteStockChecked = formData.get('infinite_stock') === 'on';
-        const isActiveChecked = formData.get('is_active') === 'on';
+        const infiniteStockChecked = infiniteStockCheckbox ? infiniteStockCheckbox.checked : false;
+        const isActiveChecked = isActiveCheckbox ? isActiveCheckbox.checked : false;
         
-        // Удаляем старые значения и устанавливаем новые
+        console.log('📦 [ADMIN FORM] Чекбоксы из DOM:', { 
+            infiniteStockChecked,
+            isActiveChecked
+        });
+        
+        // Удаляем старые значения (если были)
         formData.delete('infinite_stock');
         formData.delete('is_active');
+        
+        // ЯВНО добавляем правильные значения
         formData.append('infinite_stock', infiniteStockChecked ? 'on' : 'off');
         formData.append('is_active', isActiveChecked ? 'on' : 'off');
         
-        console.log('📦 [ADMIN FORM] Чекбоксы:', { 
+        console.log('📤 [ADMIN FORM] Отправка:', { 
             infinite_stock: formData.get('infinite_stock'),
             is_active: formData.get('is_active')
         });
