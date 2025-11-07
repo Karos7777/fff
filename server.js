@@ -187,56 +187,6 @@ app.post('/api/test-crypto-invoice', async (req, res) => {
   }
 });
 
-// Эндпоинт для создания платежа (для Telegram Wallet интеграции)
-app.post('/api/create-payment', authMiddlewareWithDB, async (req, res) => {
-  try {
-    const { product_id, amount, currency = 'TON' } = req.body;
-    const userId = req.user.id;
-    
-    console.log('💳 [CREATE-PAYMENT] Создание платежа:', { userId, product_id, amount, currency });
-    
-    if (!product_id || !amount) {
-      return res.status(400).json({ error: 'Необходимы product_id и amount' });
-    }
-    
-    // Проверяем, что товар существует
-    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [product_id]);
-    const product = productResult.rows[0];
-    
-    if (!product) {
-      return res.status(404).json({ error: 'Товар не найден' });
-    }
-    
-    // Создаем запись о платеже в базе
-    const result = await db.query(`
-      INSERT INTO payments (user_id, product_id, amount, currency, status, created_at)
-      VALUES ($1, $2, $3, $4, 'pending', NOW()) RETURNING *
-    `, [userId, product_id, amount, currency]);
-    
-    const payment = result.rows[0];
-    console.log('✅ [CREATE-PAYMENT] Платеж создан:', payment);
-    
-    // Генерируем данные для инвойса Telegram
-    const invoiceData = {
-      payment_id: payment.id,
-      amount: amount,
-      currency: currency,
-      description: `Оплата товара "${product.name}"`,
-      product_name: product.name
-    };
-    
-    res.json({
-      success: true,
-      payment: payment,
-      invoice_data: invoiceData,
-      payment_id: payment.id
-    });
-  } catch (error) {
-    console.error('❌ [CREATE-PAYMENT] Ошибка создания платежа:', error);
-    res.status(500).json({ error: 'Ошибка создания платежа: ' + error.message });
-  }
-});
-
 // Health check endpoint для предотвращения засыпания на бесплатном тарифе
 app.get('/healthz', (req, res) => {
   res.status(200).send('OK');
@@ -737,6 +687,56 @@ app.post('/api/payments/crypto/check', authMiddlewareWithDB, async (req, res) =>
   } catch (error) {
     console.error('Ошибка проверки криптоплатежей:', error);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Эндпоинт для создания платежа (для Telegram Wallet интеграции)
+app.post('/api/create-payment', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { product_id, amount, currency = 'TON' } = req.body;
+    const userId = req.user.id;
+    
+    console.log('💳 [CREATE-PAYMENT] Создание платежа:', { userId, product_id, amount, currency });
+    
+    if (!product_id || !amount) {
+      return res.status(400).json({ error: 'Необходимы product_id и amount' });
+    }
+    
+    // Проверяем, что товар существует
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [product_id]);
+    const product = productResult.rows[0];
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Создаем запись о платеже в базе
+    const result = await db.query(`
+      INSERT INTO payments (user_id, product_id, amount, currency, status, created_at)
+      VALUES ($1, $2, $3, $4, 'pending', NOW()) RETURNING *
+    `, [userId, product_id, amount, currency]);
+    
+    const payment = result.rows[0];
+    console.log('✅ [CREATE-PAYMENT] Платеж создан:', payment);
+    
+    // Генерируем данные для инвойса Telegram
+    const invoiceData = {
+      payment_id: payment.id,
+      amount: amount,
+      currency: currency,
+      description: `Оплата товара "${product.name}"`,
+      product_name: product.name
+    };
+    
+    res.json({
+      success: true,
+      payment: payment,
+      invoice_data: invoiceData,
+      payment_id: payment.id
+    });
+  } catch (error) {
+    console.error('❌ [CREATE-PAYMENT] Ошибка создания платежа:', error);
+    res.status(500).json({ error: 'Ошибка создания платежа: ' + error.message });
   }
 });
 
