@@ -863,31 +863,34 @@ app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (
     
     console.log('✅ [ADMIN] Обработанные значения:', { infiniteStockBool, isActiveBool, stockValue });
     
-    const insertProduct = dbLegacy.prepare(`
-      INSERT INTO products (name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, image_url, file_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const result = insertProduct.run(
-      name,
-      description || null,
-      parseFloat(price) || 0,
-      parseFloat(price_ton) || null,
-      parseFloat(price_usdt) || null,
-      parseInt(price_stars) || null,
-      stockValue,
-      infiniteStockBool ? 1 : 0,
-      isActiveBool ? 1 : 0,
-      imageUrl,
-      file_path || null
+    // Используем новый db с RETURNING
+    const product = await db.run(
+      `INSERT INTO products 
+       (name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, image_url, file_path)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, name, price_ton, infinite_stock, is_active`,
+      [
+        name,
+        description || '',
+        parseFloat(price) || 0,
+        parseFloat(price_ton) || null,
+        parseFloat(price_usdt) || null,
+        parseInt(price_stars) || null,
+        stockValue,
+        infiniteStockBool,
+        isActiveBool,
+        imageUrl,
+        file_path || null
+      ]
     );
     
-    console.log('✅ [ADMIN] Товар создан с ID:', result.lastInsertRowid);
+    console.log('✅ [ADMIN] Товар создан:', product);
     
     res.json({ 
       success: true, 
       message: 'Товар успешно создан',
-      productId: result.lastInsertRowid
+      productId: product.id,
+      product: product
     });
   } catch (error) {
     console.error('❌ [ADMIN] Ошибка создания товара:', error);
@@ -905,8 +908,7 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), asyn
     console.log('📦 [ADMIN] Данные для обновления:', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
     
     // Получаем текущий товар
-    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
-    const currentProduct = getProduct.get(productId);
+    const currentProduct = await db.get('SELECT * FROM products WHERE id = $1', [productId]);
     
     if (!currentProduct) {
       return res.status(404).json({ error: 'Товар не найден' });
@@ -924,33 +926,35 @@ app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), asyn
     const isActiveBool = is_active === 'true' || is_active === true || is_active === '1';
     const stockValue = infiniteStockBool ? 0 : parseInt(stock) || 0;
     
-    const updateProduct = dbLegacy.prepare(`
-      UPDATE products 
-      SET name = ?, description = ?, price = ?, price_ton = ?, price_usdt = ?, price_stars = ?, 
-          stock = ?, infinite_stock = ?, is_active = ?, image_url = ?, file_path = ?
-      WHERE id = ?
-    `);
-    
-    updateProduct.run(
-      name,
-      description || null,
-      parseFloat(price) || 0,
-      parseFloat(price_ton) || null,
-      parseFloat(price_usdt) || null,
-      parseInt(price_stars) || null,
-      stockValue,
-      infiniteStockBool ? 1 : 0,
-      isActiveBool ? 1 : 0,
-      imageUrl,
-      file_path || currentProduct.file_path,
-      productId
+    // Используем новый db с RETURNING
+    const product = await db.run(
+      `UPDATE products 
+       SET name = $1, description = $2, price = $3, price_ton = $4, price_usdt = $5, price_stars = $6, 
+           stock = $7, infinite_stock = $8, is_active = $9, image_url = $10, file_path = $11
+       WHERE id = $12
+       RETURNING id, name, price_ton, infinite_stock, is_active`,
+      [
+        name,
+        description || '',
+        parseFloat(price) || 0,
+        parseFloat(price_ton) || null,
+        parseFloat(price_usdt) || null,
+        parseInt(price_stars) || null,
+        stockValue,
+        infiniteStockBool,
+        isActiveBool,
+        imageUrl,
+        file_path || currentProduct.file_path,
+        productId
+      ]
     );
     
-    console.log('✅ [ADMIN] Товар #' + productId + ' обновлён');
+    console.log('✅ [ADMIN] Товар обновлён:', product);
     
     res.json({ 
       success: true, 
-      message: 'Товар успешно обновлён'
+      message: 'Товар успешно обновлён',
+      product: product
     });
   } catch (error) {
     console.error('❌ [ADMIN] Ошибка обновления товара:', error);

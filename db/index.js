@@ -25,12 +25,20 @@ const db = {
   },
 
   // Выполнить запрос (INSERT/UPDATE/DELETE)
+  // Возвращает первую строку если есть RETURNING, иначе { rowCount }
   async run(text, params) {
-    const result = await this.query(text, params);
-    return { 
-      rowCount: result.rowCount,
-      rows: result.rows 
-    };
+    const client = await pool.connect();
+    try {
+      const res = await client.query(text, params);
+      // Если есть RETURNING - возвращаем первую строку
+      if (res.rows && res.rows.length > 0) {
+        return res.rows[0];
+      }
+      // Иначе возвращаем количество затронутых строк
+      return { rowCount: res.rowCount };
+    } finally {
+      client.release();
+    }
   },
 
   // Получить все строки
