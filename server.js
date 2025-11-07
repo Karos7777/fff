@@ -841,6 +841,123 @@ app.get('/api/admin/products', adminMiddleware, (req, res) => {
   }
 });
 
+// Создание нового товара (только для админов)
+app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (req, res) => {
+  console.log('\n➕ [ADMIN] Создание нового товара');
+  try {
+    const { name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, file_path } = req.body;
+    
+    console.log('📦 [ADMIN] Данные товара:', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
+    
+    // Обработка изображения
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = `/uploads/${req.file.filename}`;
+      console.log('🖼️ [ADMIN] Загружено изображение:', imageUrl);
+    }
+    
+    // Преобразуем чекбоксы
+    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true;
+    const isActiveBool = is_active === 'true' || is_active === true || is_active === '1';
+    const stockValue = infiniteStockBool ? 0 : parseInt(stock) || 0;
+    
+    console.log('✅ [ADMIN] Обработанные значения:', { infiniteStockBool, isActiveBool, stockValue });
+    
+    const insertProduct = dbLegacy.prepare(`
+      INSERT INTO products (name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, image_url, file_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const result = insertProduct.run(
+      name,
+      description || null,
+      parseFloat(price) || 0,
+      parseFloat(price_ton) || null,
+      parseFloat(price_usdt) || null,
+      parseInt(price_stars) || null,
+      stockValue,
+      infiniteStockBool ? 1 : 0,
+      isActiveBool ? 1 : 0,
+      imageUrl,
+      file_path || null
+    );
+    
+    console.log('✅ [ADMIN] Товар создан с ID:', result.lastInsertRowid);
+    
+    res.json({ 
+      success: true, 
+      message: 'Товар успешно создан',
+      productId: result.lastInsertRowid
+    });
+  } catch (error) {
+    console.error('❌ [ADMIN] Ошибка создания товара:', error);
+    res.status(500).json({ error: 'Ошибка создания товара: ' + error.message });
+  }
+});
+
+// Обновление товара (только для админов)
+app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), async (req, res) => {
+  console.log('\n✏️ [ADMIN] Обновление товара #' + req.params.id);
+  try {
+    const productId = parseInt(req.params.id);
+    const { name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, file_path } = req.body;
+    
+    console.log('📦 [ADMIN] Данные для обновления:', { name, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active });
+    
+    // Получаем текущий товар
+    const getProduct = dbLegacy.prepare('SELECT * FROM products WHERE id = ?');
+    const currentProduct = getProduct.get(productId);
+    
+    if (!currentProduct) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Обработка изображения
+    let imageUrl = currentProduct.image_url;
+    if (req.file) {
+      imageUrl = `/uploads/${req.file.filename}`;
+      console.log('🖼️ [ADMIN] Обновлено изображение:', imageUrl);
+    }
+    
+    // Преобразуем чекбоксы
+    const infiniteStockBool = infinite_stock === 'true' || infinite_stock === true;
+    const isActiveBool = is_active === 'true' || is_active === true || is_active === '1';
+    const stockValue = infiniteStockBool ? 0 : parseInt(stock) || 0;
+    
+    const updateProduct = dbLegacy.prepare(`
+      UPDATE products 
+      SET name = ?, description = ?, price = ?, price_ton = ?, price_usdt = ?, price_stars = ?, 
+          stock = ?, infinite_stock = ?, is_active = ?, image_url = ?, file_path = ?
+      WHERE id = ?
+    `);
+    
+    updateProduct.run(
+      name,
+      description || null,
+      parseFloat(price) || 0,
+      parseFloat(price_ton) || null,
+      parseFloat(price_usdt) || null,
+      parseInt(price_stars) || null,
+      stockValue,
+      infiniteStockBool ? 1 : 0,
+      isActiveBool ? 1 : 0,
+      imageUrl,
+      file_path || currentProduct.file_path,
+      productId
+    );
+    
+    console.log('✅ [ADMIN] Товар #' + productId + ' обновлён');
+    
+    res.json({ 
+      success: true, 
+      message: 'Товар успешно обновлён'
+    });
+  } catch (error) {
+    console.error('❌ [ADMIN] Ошибка обновления товара:', error);
+    res.status(500).json({ error: 'Ошибка обновления товара: ' + error.message });
+  }
+});
+
 // Получение истории платежей пользователя
 app.get('/api/payments/history', authMiddlewareWithDB, (req, res) => {
   try {
