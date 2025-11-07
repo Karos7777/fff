@@ -550,3 +550,52 @@
     color: #ecf0f1;
   }
 }
+
+/* Кнопка открытия кошелька */
+.wallet-actions {
+  margin: 20px 0;
+  text-align: center;
+}
+
+.wallet-button {
+  background: linear-gradient(135deg, #0088cc, #00a2e8);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  display: block;
+  box-shadow: 0 2px 8px rgba(0, 136, 204, 0.2);
+}
+
+.wallet-button:hover {
+  background: linear-gradient(135deg, #0077b3, #0091cc);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 136, 204, 0.3);
+}
+
+.wallet-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 136, 204, 0.2);
+}
+
+.wallet-button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 480px) {
+  .wallet-button {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+}

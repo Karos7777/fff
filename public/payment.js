@@ -396,6 +396,14 @@ class PaymentManager {
           <!-- QR код будет сгенерирован -->
         </div>
         
+        ${invoice.currency === 'TON' ? `
+        <div class="wallet-actions">
+          <button id="openWalletButton" class="wallet-button" onclick="paymentManager.openTelegramWallet('${invoice.address}', '${invoice.amount}', '${invoice.memo}')">
+            💳 ОТКРЫТЬ В ТОН КОШЕЛЬКЕ
+          </button>
+        </div>
+        ` : ''}
+        
         <div class="payment-instructions">
           <h4>Инструкция по оплате:</h4>
           <ol>
@@ -806,6 +814,72 @@ class PaymentManager {
     if (statusElement) {
       statusElement.innerHTML = `<div class="status-info">ℹ️ ${message}</div>`;
     }
+  }
+
+  // Открытие Telegram кошелька
+  openTelegramWallet(address, amount, memo) {
+    console.log('💳 [WALLET] Открытие Telegram кошелька:', { address, amount, memo });
+    
+    // Проверяем, что мы в Telegram Web App
+    if (window.Telegram && window.Telegram.WebApp) {
+      try {
+        console.log('✅ [WALLET] Telegram WebApp доступен');
+        
+        // Создаем deep link для TON кошелька
+        const amountInNano = Math.floor(parseFloat(amount) * 1e9); // Конвертируем в наноTON
+        const tonLink = `ton://transfer/${address}?amount=${amountInNano}&text=${encodeURIComponent(memo)}`;
+        
+        console.log('🔗 [WALLET] TON deep link:', tonLink);
+        
+        // Пытаемся открыть через Telegram WebApp
+        window.Telegram.WebApp.openLink(tonLink);
+        
+        // Показываем сообщение пользователю
+        this.showToast('🚀 Открываем кошелёк Telegram...');
+        
+      } catch (error) {
+        console.error('❌ [WALLET] Ошибка открытия через Telegram WebApp:', error);
+        this.fallbackToDeepLink(address, amount, memo);
+      }
+    } else {
+      console.log('⚠️ [WALLET] Telegram WebApp недоступен, используем fallback');
+      this.fallbackToDeepLink(address, amount, memo);
+    }
+  }
+
+  // Fallback метод для открытия кошелька через deep links
+  fallbackToDeepLink(address, amount, memo) {
+    const amountInNano = Math.floor(parseFloat(amount) * 1e9);
+    
+    // Создаем различные deep links
+    const tonLink = `ton://transfer/${address}?amount=${amountInNano}&text=${encodeURIComponent(memo)}`;
+    const tonkeeperLink = `https://app.tonkeeper.com/transfer/${address}?amount=${amountInNano}&text=${encodeURIComponent(memo)}`;
+    
+    console.log('🔗 [WALLET] Fallback links:', { tonLink, tonkeeperLink });
+    
+    // Пытаемся открыть через deep link
+    try {
+      window.location.href = tonLink;
+      this.showToast('🚀 Открываем TON кошелёк...');
+      
+      // Fallback через Tonkeeper через 2 секунды
+      setTimeout(() => {
+        if (!document.hidden) {
+          console.log('🔄 [WALLET] Открываем Tonkeeper как fallback');
+          window.open(tonkeeperLink, '_blank');
+          this.showToast('📱 Если кошелёк не открылся, используйте QR код');
+        }
+      }, 2000);
+      
+    } catch (error) {
+      console.error('❌ [WALLET] Ошибка fallback:', error);
+      this.showToast('❌ Не удалось открыть кошелёк. Используйте QR код');
+    }
+  }
+
+  // Проверка доступности Telegram WebApp
+  isTelegramWebApp() {
+    return !!(window.Telegram && window.Telegram.WebApp);
   }
 }
 
