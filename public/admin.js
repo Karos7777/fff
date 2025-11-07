@@ -1,12 +1,12 @@
-// === ADMIN.JS — ФИНАЛЬНАЯ ВЕРСИЯ 2.5.6 ===
-console.log('🚀 ADMIN.JS ЗАГРУЖЕН! Версия 2.5.6');
+// === ADMIN.JS — ФИНАЛЬНАЯ ВЕРСИЯ 2.5.7 ===
+console.log('🚀 ADMIN.JS ЗАГРУЖЕН! Версия 2.5.7');
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('📋 Админка: DOM загружен');
 
   const form = document.getElementById('productForm');
   if (!form) {
-    console.error('❌ ОШИБКА: Форма #productForm не найдена!');
+    console.error('❌ ФОРМА #productForm НЕ НАЙДЕНА!');
     return;
   }
 
@@ -14,11 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    console.log('📝 Форма отправлена!');
+    console.log('📝 Форма отправлена');
 
     const formData = new FormData(form);
 
-    // ЧИТАЕМ ЧЕКБОКСЫ ПО ID ИЗ HTML
     const infiniteEl = document.getElementById('productInfinite');
     const activeEl = document.getElementById('productActive');
 
@@ -27,7 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log('📦 Чекбоксы:', { infinite, active });
 
-    // ЯВНО ДОБАВЛЯЕМ В FormData
     formData.set('infinite_stock', infinite ? 'on' : 'off');
     formData.set('is_active', active ? 'on' : 'off');
 
@@ -49,11 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('📥 Ответ сервера:', data);
 
       if (data.success) {
-        alert('✅ Товар успешно добавлен!');
+        alert('✅ Товар добавлен!');
         location.reload();
       } else {
         alert('❌ Ошибка: ' + (data.error || 'Неизвестно'));
-        console.error('Сервер вернул ошибку:', data);
       }
     } catch (err) {
       console.error('❌ Ошибка сети:', err);
