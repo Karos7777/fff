@@ -177,14 +177,19 @@ const Auth = {
                 const user = window.Telegram.WebApp.initDataUnsafe.user;
                 await this.authenticateUser(user.id, user.username, user.first_name, user.last_name);
             } else {
-                // Для тестирования в браузере
-                const testUser = {
-                    id: 123456789,
-                    username: 'testuser',
-                    first_name: 'Test',
-                    last_name: 'User'
-                };
-                await this.authenticateUser(testUser.id, testUser.username, testUser.first_name, testUser.last_name);
+                // В Telegram WebApp не показываем тестового пользователя
+                if (window.Telegram?.WebApp) {
+                    throw new Error('Данные пользователя недоступны в Telegram WebApp');
+                } else {
+                    // Только для тестирования в обычном браузере
+                    const testUser = {
+                        id: 123456789,
+                        username: 'testuser',
+                        first_name: 'Test',
+                        last_name: 'User'
+                    };
+                    await this.authenticateUser(testUser.id, testUser.username, testUser.first_name, testUser.last_name);
+                }
             }
         } catch (error) {
             console.error('❌ [AUTH] Ошибка авторизации:', error);
@@ -307,9 +312,14 @@ const Auth = {
             });
             
             if (response.success && response.token && response.user) {
-                // Сохраняем токен и данные пользователя
-                localStorage.setItem(CONFIG.CACHE_KEYS.AUTH_TOKEN, response.token);
+                // Очищаем старые токены перед сохранением новых
+                this.clearAuthToken();
+                
+                // Сохраняем новый токен и данные пользователя
+                this.saveAuthToken(response.token);
                 localStorage.setItem(CONFIG.CACHE_KEYS.CURRENT_USER, JSON.stringify(response.user));
+                
+                console.log('✅ [AUTH] Новый токен сохранен для пользователя:', response.user.telegram_id);
                 
                 // Устанавливаем глобальные переменные
                 window.currentUser = response.user;

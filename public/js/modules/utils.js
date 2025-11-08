@@ -10,8 +10,8 @@ const Utils = {
         if (storedVersion !== CONFIG.APP_VERSION) {
             console.log('⚠️ [VERSION] Обнаружено обновление! Очистка кеша...');
             
-            // Для версий 3.3.1 и 3.4.0 принудительно очищаем токены из-за проблем с JWT
-            const forceTokenClear = ['3.3.1', '3.4.0'].includes(CONFIG.APP_VERSION);
+            // Для версий 3.3.1, 3.4.0 и 3.4.1 принудительно очищаем токены из-за проблем с JWT
+            const forceTokenClear = ['3.3.1', '3.4.0', '3.4.1'].includes(CONFIG.APP_VERSION);
             
             // Сохраняем важные данные перед очисткой (кроме токенов если нужна принудительная очистка)
             const authToken = forceTokenClear ? null : localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
