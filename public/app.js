@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.9.0';
+const APP_VERSION = '3.0.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1371,7 +1371,7 @@ async function payWithStars(productId) {
         const orderData = await orderResponse.json();
         
         // Теперь создаем инвойс для Stars
-        const invoiceResponse = await fetch('/api/payments/stars/create-invoice', {
+        const invoiceResponse = await fetch('/api/create-stars-invoice', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1379,9 +1379,7 @@ async function payWithStars(productId) {
             },
             body: JSON.stringify({
                 orderId: orderData.orderId,
-                productId: productId,
-                amount: product.price_stars,
-                description: `Покупка: ${product.name}`
+                productId: productId
             })
         });
         
@@ -1392,8 +1390,14 @@ async function payWithStars(productId) {
         
         const invoiceData = await invoiceResponse.json();
         
+        if (!invoiceData.success) {
+            throw new Error(invoiceData.error || 'Ошибка создания инвойса');
+        }
+        
+        console.log('✅ [STARS] Инвойс создан, открываем платежную форму...');
+        
         // Открываем инвойс через Telegram WebApp API
-        window.Telegram.WebApp.openInvoice(invoiceData.invoiceUrl, (status) => {
+        window.Telegram.WebApp.openInvoice(invoiceData.invoice_link, (status) => {
             console.log('⭐ [STARS] Статус оплаты:', status);
             
             if (status === 'paid') {

@@ -784,7 +784,134 @@ app.post('/api/create-payment', authMiddlewareWithDB, async (req, res) => {
   }
 });
 
-// Эндпоинт для создания Telegram Stars инвойса
+// Эндпоинт для проверки статуса Stars платежа
+app.get('/api/payments/status/:paymentId', async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    console.log('🔍 [PAYMENT STATUS] Проверка статуса платежа:', paymentId);
+    
+    // Если это Stars платеж (начинается с stars_)
+    if (paymentId.startsWith('stars_')) {
+      // Извлекаем orderId из paymentId (формат: stars_orderId_timestamp)
+      const parts = paymentId.split('_');
+      const orderId = parts[1];
+      
+      if (!orderId) {
+        return res.status(400).json({ error: 'Неверный формат payment ID' });
+      }
+      
+      // Проверяем статус заказа в базе данных
+      const orderResult = await db.query(
+        'SELECT status, payment_method FROM orders WHERE id = $1',
+        [orderId]
+      );
+      
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Заказ не найден' });
+      }
+      
+      const order = orderResult.rows[0];
+      console.log('📊 [PAYMENT STATUS] Статус заказа:', order.status);
+      
+      res.json({ 
+        status: order.status,
+        payment_id: paymentId,
+        order_id: orderId,
+        payment_method: order.payment_method
+      });
+    } else {
+      // Для других типов платежей (TON/USDT)
+      res.status(404).json({ error: 'Тип платежа не поддерживается для проверки статуса' });
+    }
+  } catch (error) {
+    console.error('❌ [PAYMENT STATUS] Ошибка проверки статуса платежа:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Упрощенный эндпоинт для создания Stars инвойса
+app.post('/api/create-stars-invoice', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { orderId, productId } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [CREATE-STARS] Создание Stars инвойса:', { userId, orderId, productId });
+    
+    if (!orderId || !productId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Необходимы orderId и productId' 
+      });
+    }
+    
+    // Получаем информацию о товаре
+    const productResult = await db.query(
+      'SELECT name, price_stars, description FROM products WHERE id = $1',
+      [productId]
+    );
+    
+    if (productResult.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Товар не найден' 
+      });
+    }
+    
+    const product = productResult.rows[0];
+    const starsAmount = product.price_stars || 100; // По умолчанию 100 Stars
+    
+    console.log('💰 [CREATE-STARS] Цена товара:', starsAmount, 'Stars');
+    
+    // Создаем payload для отслеживания
+    const payload = `stars_order_${orderId}`;
+    
+    // Создаем инвойс через Telegram Bot API
+    const invoiceResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: product.name,
+        description: product.description || `Оплата товара: ${product.name}`,
+        payload: payload,
+        provider_token: '', // Пусто для Stars!
+        currency: 'XTR', // Telegram Stars
+        prices: [{ 
+          label: 'Stars', 
+          amount: starsAmount // Для Stars amount = количество звезд
+        }]
+      })
+    });
+    
+    const invoiceData = await invoiceResponse.json();
+    console.log('📄 [CREATE-STARS] Ответ Telegram API:', invoiceData);
+    
+    if (invoiceData.ok) {
+      // Сохраняем информацию об инвойсе в базу данных
+      await db.query(
+        'UPDATE orders SET telegram_invoice_data = $1, payload = $2 WHERE id = $3',
+        [JSON.stringify(invoiceData.result), payload, orderId]
+      );
+      
+      res.json({
+        success: true,
+        invoice_link: invoiceData.result,
+        order_id: orderId,
+        payload: payload
+      });
+    } else {
+      throw new Error(invoiceData.description || 'Ошибка создания инвойса');
+    }
+    
+  } catch (error) {
+    console.error('❌ [CREATE-STARS] Ошибка создания Stars инвойса:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Ошибка создания платежа: ' + error.message
+    });
+  }
+});
+
+// Эндпоинт для создания Telegram Stars инвойса (старый)
 app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req, res) => {
   try {
     const { orderId, productId, amount, description } = req.body;
@@ -891,7 +1018,96 @@ app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req,
   }
 });
 
-// Webhook для обработки Telegram Stars платежей
+// Основной Telegram вебхук для обработки всех обновлений
+app.post('/api/telegram-webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    console.log('📨 [TELEGRAM-WEBHOOK] Получен update:', JSON.stringify(update, null, 2));
+    
+    // Обработка pre_checkout_query (обязательно для Stars)
+    if (update.pre_checkout_query) {
+      const preCheckout = update.pre_checkout_query;
+      console.log('🔍 [PRE-CHECKOUT] Проверка платежа:', preCheckout.invoice_payload);
+      
+      // Проверяем, что заказ существует и валиден
+      let isOrderValid = true;
+      
+      if (preCheckout.invoice_payload.startsWith('stars_order_')) {
+        const orderId = preCheckout.invoice_payload.replace('stars_order_', '');
+        
+        const orderResult = await db.query(
+          'SELECT status FROM orders WHERE id = $1',
+          [orderId]
+        );
+        
+        if (orderResult.rows.length === 0 || orderResult.rows[0].status !== 'pending') {
+          isOrderValid = false;
+        }
+      }
+      
+      // Отвечаем на pre_checkout_query
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerPreCheckoutQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pre_checkout_query_id: preCheckout.id,
+          ok: isOrderValid,
+          error_message: isOrderValid ? undefined : 'Заказ недоступен для оплаты'
+        })
+      });
+      
+      console.log('✅ [PRE-CHECKOUT] Ответ отправлен:', isOrderValid ? 'OK' : 'ERROR');
+    }
+    
+    // Обработка успешного платежа Stars
+    if (update.message && update.message.successful_payment) {
+      const payment = update.message.successful_payment;
+      const payload = payment.invoice_payload;
+      const userId = update.message.from.id;
+      
+      console.log('🎉 [SUCCESSFUL-PAYMENT] Успешный платеж:', { 
+        payload, 
+        amount: payment.total_amount,
+        userId 
+      });
+      
+      // Если это Stars платеж
+      if (payload.startsWith('stars_order_')) {
+        const orderId = payload.replace('stars_order_', '');
+        
+        // Обновляем статус заказа в базе данных
+        const updateResult = await db.query(
+          'UPDATE orders SET status = $1, paid_at = NOW(), transaction_hash = $2 WHERE id = $3 AND status = $4',
+          ['paid', payment.telegram_payment_charge_id, orderId, 'pending']
+        );
+        
+        if (updateResult.rowCount > 0) {
+          console.log(`✅ [SUCCESSFUL-PAYMENT] Stars платеж подтвержден для заказа ${orderId}`);
+          
+          // Отправляем уведомление пользователю
+          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: userId,
+              text: `🎉 Оплата прошла успешно!\n\nВаш заказ #${orderId} оплачен и будет обработан в ближайшее время.`
+            })
+          });
+        } else {
+          console.log(`⚠️ [SUCCESSFUL-PAYMENT] Заказ ${orderId} не найден или уже оплачен`);
+        }
+      }
+    }
+    
+    res.json({ ok: true });
+    
+  } catch (error) {
+    console.error('❌ [TELEGRAM-WEBHOOK] Ошибка обработки вебхука:', error);
+    res.status(500).json({ error: 'Ошибка обработки вебхука' });
+  }
+});
+
+// Webhook для обработки Telegram Stars платежей (старый)
 app.post('/api/payments/stars/webhook', async (req, res) => {
   try {
     const update = req.body;
