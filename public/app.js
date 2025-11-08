@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '3.5.2';
+const APP_VERSION = '3.5.3';
 
 // Инициализация перехватчика для автоматического добавления токенов
 (function initAuthInterceptor() {
@@ -713,12 +713,30 @@ function setupEventListeners() {
                 
                 showLoading();
                 const token = localStorage.getItem('authToken');
-                const response = await fetch('/api/admin/products', {
+                
+                // Преобразуем FormData в JSON
+                const productData = {
+                    name: formData.get('name'),
+                    description: formData.get('description'),
+                    price: compatPrice,
+                    price_ton: priceTon || null,
+                    price_usdt: priceUsdt || null,
+                    price_stars: priceStars || null,
+                    category: formData.get('category') || 'other',
+                    image_url: formData.get('image_url') || null,
+                    file_path: formData.get('file_path') || null,
+                    stock_quantity: parseInt(formData.get('stock_quantity')) || 999
+                };
+                
+                console.log('📦 [CREATE] Отправка данных товара:', productData);
+                
+                const response = await fetch('/api/products', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     },
-                    body: formData
+                    body: JSON.stringify(productData)
                 });
                 if (!response.ok) throw new Error('Ошибка добавления услуги');
                 showSuccess('Услуга добавлена!');
@@ -1906,9 +1924,9 @@ async function deleteProduct(productId) {
 
         const token = localStorage.getItem('authToken');
         console.log('🗑️ [DELETE] Токен авторизации:', token ? 'Есть' : 'Отсутствует');
-        console.log('🗑️ [DELETE] Отправка DELETE запроса на:', `/api/admin/products/${productId}`);
+        console.log('🗑️ [DELETE] Отправка DELETE запроса на:', `/api/products/${productId}`);
         
-        const response = await fetch(`/api/admin/products/${productId}`, {
+        const response = await fetch(`/api/products/${productId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${token}`

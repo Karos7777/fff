@@ -26,21 +26,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log('📦 Чекбоксы:', { infinite, active });
 
-    formData.set('infinite_stock', infinite ? 'on' : 'off');
-    formData.set('is_active', active ? 'on' : 'off');
+    // Преобразуем FormData в JSON объект
+    const productData = {
+      name: formData.get('name'),
+      description: formData.get('description'),
+      price: parseFloat(formData.get('price')) || 0,
+      price_ton: parseFloat(formData.get('price_ton')) || null,
+      price_usdt: parseFloat(formData.get('price_usdt')) || null,
+      price_stars: parseInt(formData.get('price_stars')) || null,
+      category: formData.get('category') || 'other',
+      image_url: formData.get('image_url') || null,
+      file_path: formData.get('file_path') || null,
+      stock_quantity: infinite ? 999999 : (parseInt(formData.get('stock_quantity')) || 0),
+      infinite_stock: infinite,
+      is_active: active
+    };
 
-    console.log('📤 Отправка:', {
-      'infinite_stock': formData.get('infinite_stock'),
-      'is_active': formData.get('is_active')
-    });
+    console.log('📤 Отправка:', productData);
 
     try {
-      const res = await fetch('/api/admin/products', {
+      const res = await fetch('/api/products', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          'Content-Type': 'application/json'
         },
-        body: formData
+        body: JSON.stringify(productData)
       });
 
       const data = await res.json();
