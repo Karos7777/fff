@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.1.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -103,8 +103,8 @@ window.orders = orders;
 const translations = {
     ru: {
       // Общее
-      shopTitle: 'Магазин Услуг',
-      shopSubtitle: 'Профессиональные услуги разработки и консультации',
+      shopTitle: 'Магазин',
+      shopSubtitle: '',
       loading: 'Загрузка...',
       price: 'Цена',
       date: 'Дата',
@@ -496,7 +496,65 @@ function setupEventListeners() {
     }
     
     if (reviewForm) {
-        reviewForm.addEventListener('submit', handleReviewSubmit);
+        reviewForm.addEventListener('submit', window.handleReviewSubmit || handleReviewSubmit);
+    }
+    
+    // Локальная функция отправки отзыва (если не определена в orders-manager.js)
+    async function handleReviewSubmit(e) {
+        e.preventDefault();
+        console.log('⭐ [REVIEW] Отправка отзыва');
+        
+        const productId = document.getElementById('reviewProductId').value;
+        const orderId = document.getElementById('reviewOrderId').value;
+        const rating = document.getElementById('ratingValue').value;
+        const text = document.getElementById('reviewText').value;
+        
+        if (!rating) {
+            showError('Пожалуйста, выберите оценку');
+            return;
+        }
+        
+        try {
+            showLoading();
+            
+            const token = localStorage.getItem('authToken');
+            const response = await fetch('/api/reviews', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    product_id: productId,
+                    order_id: orderId,
+                    rating: parseInt(rating),
+                    comment: text
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Ошибка отправки отзыва');
+            }
+            
+            console.log('✅ [REVIEW] Отзыв отправлен');
+            showSuccess('Спасибо за отзыв!');
+            
+            // Закрываем модальное окно
+            document.getElementById('reviewModal').style.display = 'none';
+            
+            // Перезагружаем товары для обновления рейтинга
+            if (typeof loadProducts === 'function') {
+                await loadProducts(true);
+                filterProducts();
+            }
+            
+        } catch (error) {
+            console.error('❌ [REVIEW] Ошибка:', error);
+            showError(error.message);
+        } finally {
+            hideLoading();
+        }
     }
 
     // Система рейтинга
@@ -1929,3 +1987,8 @@ async function orderProduct(productId) {
     showError('Ошибка при создании заказа: ' + error.message);
   }
 }
+
+// Экспортируем функции оплаты в глобальную область
+window.payWithStars = payWithStars;
+window.payWithTON = payWithTON;
+window.payWithUSDT = payWithUSDT;
