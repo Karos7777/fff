@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1416,8 +1416,9 @@ async function payWithStars(productId) {
                 'Authorization': `Bearer ${localStorage.getItem('authToken')}`
             },
             body: JSON.stringify({
-                productId: productId,
-                paymentMethod: 'stars'
+                product_id: productId,
+                quantity: 1,
+                payment_method: 'stars'
             })
         });
         
@@ -1436,7 +1437,7 @@ async function payWithStars(productId) {
                 'Authorization': `Bearer ${localStorage.getItem('authToken')}`
             },
             body: JSON.stringify({
-                orderId: orderData.orderId,
+                orderId: orderData.order?.id || orderData.orderId,
                 productId: productId
             })
         });
@@ -1452,7 +1453,28 @@ async function payWithStars(productId) {
             throw new Error(invoiceData.error || 'Ошибка создания инвойса');
         }
         
-        console.log('✅ [STARS] Инвойс создан, открываем платежную форму...');
+        console.log('✅ [STARS] Инвойс создан:', invoiceData);
+        console.log('🔍 [STARS] Проверка Telegram WebApp API:', {
+            hasTelegram: !!window.Telegram,
+            hasWebApp: !!window.Telegram?.WebApp,
+            hasOpenInvoice: !!window.Telegram?.WebApp?.openInvoice,
+            invoiceLink: invoiceData.invoice_link
+        });
+        
+        // Проверяем доступность Telegram WebApp API
+        if (!window.Telegram?.WebApp?.openInvoice) {
+            console.log('⚠️ [STARS] openInvoice недоступен, пробуем альтернативный способ...');
+            
+            // Альтернативный способ - открываем через openTelegramLink
+            if (window.Telegram?.WebApp?.openTelegramLink) {
+                window.Telegram.WebApp.openTelegramLink(invoiceData.invoice_link);
+                return;
+            }
+            
+            throw new Error('Telegram WebApp API недоступен');
+        }
+        
+        console.log('🎯 [STARS] Открываем платежную форму через openInvoice...');
         
         // Открываем инвойс через Telegram WebApp API
         window.Telegram.WebApp.openInvoice(invoiceData.invoice_link, (status) => {
@@ -1992,3 +2014,29 @@ async function orderProduct(productId) {
 window.payWithStars = payWithStars;
 window.payWithTON = payWithTON;
 window.payWithUSDT = payWithUSDT;
+
+// Отладочная информация
+console.log('🔧 [EXPORT] Функции оплаты экспортированы:', {
+    payWithStars: typeof window.payWithStars,
+    payWithTON: typeof window.payWithTON,
+    payWithUSDT: typeof window.payWithUSDT
+});
+
+// Глобальная функция для тестирования кнопки Stars
+window.testStarsButton = function() {
+    console.log('🧪 [TEST] Тестирование кнопки Stars...');
+    console.log('🔍 [TEST] Доступные функции:', {
+        payWithStars: typeof window.payWithStars,
+        Telegram: !!window.Telegram,
+        WebApp: !!window.Telegram?.WebApp,
+        openInvoice: !!window.Telegram?.WebApp?.openInvoice
+    });
+    
+    // Попробуем вызвать функцию с тестовым ID
+    if (typeof window.payWithStars === 'function') {
+        console.log('✅ [TEST] Функция payWithStars доступна');
+        // Не вызываем реальную функцию, только проверяем доступность
+    } else {
+        console.error('❌ [TEST] Функция payWithStars недоступна');
+    }
+};
