@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.7.0';
+const APP_VERSION = '2.8.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -550,6 +550,24 @@ function setupEventListeners() {
 
     // Модальные окна
     setupModalListeners();
+    
+    // Модальное окно отзывов
+    const reviewsModal = document.getElementById('reviewsModal');
+    if (reviewsModal) {
+        const closeBtn = reviewsModal.querySelector('.close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                reviewsModal.style.display = 'none';
+            });
+        }
+        
+        // Закрытие по клику вне модального окна
+        reviewsModal.addEventListener('click', (e) => {
+            if (e.target === reviewsModal) {
+                reviewsModal.style.display = 'none';
+            }
+        });
+    }
 
     // Админ: обработчики для добавления услуги
     const adminAddServiceBtn = document.getElementById('adminAddServiceBtn');
@@ -1255,13 +1273,42 @@ function toggleFavorite(productId) {
 const TELEGRAM_BOT_USERNAME = 'Cryptonajatie_bot';
 
 function shareProduct(productId) {
-    let tgLink = '';
-    if (productId) {
-        tgLink = `https://t.me/${TELEGRAM_BOT_USERNAME}?startapp=shop_${productId}`;
-    } else {
-        tgLink = `https://t.me/${TELEGRAM_BOT_USERNAME}?startapp=shop`;
+    try {
+        if (!productId) {
+            const tgLink = `https://t.me/${TELEGRAM_BOT_USERNAME}?startapp=shop`;
+            window.open(tgLink, '_blank');
+            return;
+        }
+        
+        // Находим товар в массиве products
+        const product = window.products?.find(p => p.id === productId);
+        if (!product) {
+            console.error('Товар не найден для share:', productId);
+            return;
+        }
+        
+        // Создаем текст для отправки
+        const productName = product.name || 'Товар';
+        const productDescription = product.description || 'Описание отсутствует';
+        const productPrice = formatPrice(product);
+        
+        const shareText = `🛍️ ${productName}\n\n📝 ${productDescription}\n\n💰 Цена: ${productPrice}\n\n👆 Нажмите, чтобы купить!`;
+        const tgLink = `https://t.me/${TELEGRAM_BOT_USERNAME}?startapp=shop_${productId}`;
+        
+        // Используем Telegram WebApp API для отправки
+        if (window.Telegram && window.Telegram.WebApp) {
+            const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(tgLink)}&text=${encodeURIComponent(shareText)}`;
+            window.Telegram.WebApp.openTelegramLink(shareUrl);
+        } else {
+            // Fallback - открываем обычную ссылку
+            const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(tgLink)}&text=${encodeURIComponent(shareText)}`;
+            window.open(shareUrl, '_blank');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка при отправке товара:', error);
+        showError('Ошибка при отправке товара');
     }
-    window.open(tgLink, '_blank');
 }
 
 // Получение названия категории
@@ -1403,20 +1450,26 @@ async function showReviews(productId) {
         </div>
       `;
     } else {
-      reviewsContainer.innerHTML = reviews.map(review => `
-        <div class="review-item">
-          <div class="review-header">
-            <div class="review-author">${review.author_name}</div>
-            <div class="review-rating">
-              ${generateStars(review.rating)}
+      reviewsContainer.innerHTML = reviews.map(review => {
+        const authorLink = review.telegram_id ? 
+          `<a href="https://t.me/${review.telegram_id}" target="_blank" class="review-author-link">${review.author_name}</a>` :
+          `<span class="review-author">${review.author_name}</span>`;
+          
+        return `
+          <div class="review-item">
+            <div class="review-header">
+              <div class="review-author-container">${authorLink}</div>
+              <div class="review-rating">
+                ${generateStars(review.rating)}
+              </div>
+              <div class="review-date">${formatDate(review.created_at)}</div>
             </div>
-            <div class="review-date">${formatDate(review.created_at)}</div>
+            ${review.comment ? `
+              <div class="review-comment">${review.comment}</div>
+            ` : ''}
           </div>
-          ${review.comment ? `
-            <div class="review-comment">${review.comment}</div>
-          ` : ''}
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
     
     reviewsModal.style.display = 'block';

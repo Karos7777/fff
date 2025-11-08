@@ -215,23 +215,17 @@ class PaymentManager {
       if (window.Telegram && window.Telegram.WebApp) {
         const invoice = this.currentInvoice.telegramInvoice;
         
-        // Открываем инвойс через Telegram WebApp
-        window.Telegram.WebApp.openInvoice(invoice.payload, (status) => {
-          console.log('⭐ [STARS] Статус оплаты:', status);
-          
-          if (status === 'paid') {
-            this.updateStatus('✅ Оплата успешно завершена!');
-            this.showPaymentSuccess(this.currentInvoice);
-          } else if (status === 'cancelled') {
-            this.updateStatus('❌ Оплата отменена');
-          } else if (status === 'failed') {
-            this.updateStatus('❌ Ошибка оплаты');
-          } else if (status === 'pending') {
-            this.updateStatus('⏳ Обработка платежа...');
-          }
-        });
-
-        this.updateStatus('🚀 Открываем форму оплаты...');
+        // Создаем правильную ссылку для Stars
+        const botUsername = window.TELEGRAM_BOT_USERNAME || 'Cryptonajatie_bot';
+        const invoiceUrl = `https://t.me/${botUsername}?start=invoice_${invoice.payload}`;
+        
+        // Открываем ссылку через Telegram WebApp
+        window.Telegram.WebApp.openTelegramLink(invoiceUrl);
+        
+        this.updateStatus('🚀 Переходим к оплате Stars...');
+        
+        // Запускаем проверку статуса платежа
+        this.startStatusCheck(invoice.payload);
       } else {
         throw new Error('Telegram WebApp недоступен');
       }

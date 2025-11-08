@@ -1023,7 +1023,8 @@ app.get('/api/products/:id/reviews', async (req, res) => {
         r.created_at,
         u.username,
         u.first_name,
-        u.last_name
+        u.last_name,
+        u.telegram_id
       FROM reviews r
       JOIN users u ON r.user_id = u.id
       WHERE r.product_id = $1

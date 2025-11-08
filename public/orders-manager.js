@@ -421,7 +421,14 @@ async function handleReviewSubmit(e) {
         renderOrders();
         
         // Перезагружаем товары (для обновления рейтинга)
-        await loadProducts(true);
+        if (typeof loadProducts === 'function') {
+            await loadProducts(true);
+        }
+        
+        // Обновляем отображение товаров
+        if (typeof filterProducts === 'function') {
+            filterProducts();
+        }
         
     } catch (error) {
         console.error('❌ [REVIEW] Ошибка:', error);
