@@ -46,15 +46,18 @@ module.exports = (authMiddleware) => {
         amount = product.price || 0;
       }
       
-      // Создаём заказ с полными данными
+      // ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ PAYLOAD
+      const invoicePayload = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Создаём заказ с полными данными включая payload
       const insertResult = await db.query(
-        `INSERT INTO orders (user_id, product_id, quantity, total_amount, status, payment_method, created_at) 
-         VALUES ($1, $2, $3, $4, 'pending', $5, NOW()) RETURNING *`,
-        [user_id, product_id, quantity, amount, payment_method || 'ton']
+        `INSERT INTO orders (user_id, product_id, quantity, total_amount, status, payment_method, invoice_payload, created_at) 
+         VALUES ($1, $2, $3, $4, 'pending', $5, $6, NOW()) RETURNING *`,
+        [user_id, product_id, quantity, amount, payment_method || 'ton', invoicePayload]
       );
       const order = insertResult.rows[0];
       
-      console.log('✅ [ORDER CREATE] Заказ создан:', order.id);
+      console.log('✅ [ORDER CREATE] Заказ создан:', order.id, 'Payload:', invoicePayload);
       
       // Обрабатываем создание инвойса в зависимости от способа оплаты
       if (payment_method === 'ton' || payment_method === 'TON') {
@@ -85,7 +88,8 @@ module.exports = (authMiddleware) => {
       res.json({ 
         success: true,
         order: order,
-        id: order.id, 
+        id: order.id,
+        invoice_payload: invoicePayload, // Отправляем payload на фронтенд
         message: 'Заказ создан успешно' 
       });
       

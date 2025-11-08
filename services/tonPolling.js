@@ -21,7 +21,7 @@ module.exports = () => {
 
     try {
       const pendingResult = await db.query(
-        `SELECT i.id, i.order_id, i.amount, i.invoice_payload, o.id AS orderId
+        `SELECT i.id, i.order_id, i.amount, o.invoice_payload, o.id AS orderId
          FROM invoices i
          JOIN orders o ON i.order_id = o.id
          WHERE i.status = 'pending' AND i.currency = 'TON'`
@@ -62,8 +62,14 @@ module.exports = () => {
 
       for (const inv of pending) {
         const expected = parseFloat(inv.amount);
-        const payload = inv.invoice_payload; // "ABC123"
+        const payload = inv.invoice_payload;
         const minAmount = expected * 0.9;
+
+        // Проверяем валидность payload
+        if (!payload || payload === 'null' || payload === null) {
+          console.log(`❌ [TON POLLING] Invalid payload for order #${inv.order_id}: "${payload}"`);
+          continue;
+        }
 
         console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: payload: "${payload}" | сумма >= ${minAmount.toFixed(9)} TON`);
 

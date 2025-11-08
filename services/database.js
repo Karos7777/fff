@@ -130,6 +130,19 @@ class DatabaseService {
                 }
             }
 
+            // Миграция: добавляем колонку invoice_payload для orders
+            try {
+                await this.dbLegacy.exec(`
+                    ALTER TABLE orders 
+                    ADD COLUMN IF NOT EXISTS invoice_payload VARCHAR(255)
+                `);
+                console.log('✅ Миграция: колонка invoice_payload добавлена в orders');
+            } catch (e) {
+                if (!e.message.includes('already exists')) {
+                    console.error('⚠️ Ошибка миграции invoice_payload в orders:', e.message);
+                }
+            }
+
             // Таблица инвойсов (для платежей)
             await this.dbLegacy.exec(`
                 CREATE TABLE IF NOT EXISTS invoices (

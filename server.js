@@ -196,6 +196,12 @@ app.post('/admin/fix-database', async (req, res) => {
         `);
         console.log('✅ Колонка telegram_invoice_data добавлена в таблицу orders');
         
+        // Добавляем колонку invoice_payload
+        await db.query(`
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_payload VARCHAR(255);
+        `);
+        console.log('✅ Колонка invoice_payload добавлена в таблицу orders');
+        
         res.json({ 
             success: true, 
             message: 'База данных исправлена - все колонки добавлены' 

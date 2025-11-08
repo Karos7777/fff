@@ -1521,6 +1521,10 @@ function shareProduct(productId) {
 // Функции оплаты разными способами
 async function payWithStars(productId) {
     try {
+        // ВРЕМЕННО ОТКЛЮЧАЕМ STARS
+        showError('Stars оплата временно недоступна. Пожалуйста, используйте TON.');
+        return;
+        
         showLoading();
         
         const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
@@ -1695,24 +1699,47 @@ async function checkOrderStatus(orderId) {
 }
 
 // Функция для обработки платежей с валидацией
-async function processPayment(orderId, paymentMethod) {
+async function processPayment(orderData, paymentMethod) {
     try {
-        if (!orderId || orderId === 'undefined') {
-            throw new Error('Invalid order ID for payment processing');
+        if (!orderData || !orderData.id) {
+            throw new Error('Invalid order data for payment processing');
         }
         
-        console.log('💰 [PAYMENT] Processing payment:', { orderId, paymentMethod });
+        console.log('💰 [PAYMENT] Processing payment:', { 
+            orderId: orderData.id, 
+            paymentMethod, 
+            payload: orderData.invoice_payload 
+        });
+        
+        // ВРЕМЕННО ОТКЛЮЧАЕМ STARS
+        if (paymentMethod === 'stars') {
+            throw new Error('Stars payments are temporarily unavailable. Please use TON.');
+        }
         
         switch (paymentMethod) {
             case 'stars':
-                // Stars payment уже обрабатывается в payWithStars
+                // Код для Stars (оставлен на будущее)
                 break;
+                
             case 'ton':
-                // TON payment logic
-                return { type: 'ton', orderId: orderId };
+                // Для TON возвращаем данные для оплаты с payload
+                return {
+                    type: 'ton',
+                    orderId: orderData.id,
+                    amount: orderData.total_amount || orderData.amount,
+                    payload: orderData.invoice_payload,
+                    walletAddress: 'UQCm27jo_LGzzwx49_niSXqEz9ZRRTyxJxa-yD89Wnxb13fx'
+                };
+                
             case 'usdt':
                 // USDT payment logic  
-                return { type: 'usdt', orderId: orderId };
+                return {
+                    type: 'usdt',
+                    orderId: orderData.id,
+                    amount: orderData.total_amount || orderData.amount,
+                    payload: orderData.invoice_payload
+                };
+                
             default:
                 throw new Error(`Unknown payment method: ${paymentMethod}`);
         }
