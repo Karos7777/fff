@@ -129,6 +129,87 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/telegram', telegramWebhooks);
 app.use('/api/payments/stars', starsPayments);
 
+// ВРЕМЕННЫЕ ЭНДПОИНТЫ ДЛЯ ДИАГНОСТИКИ И ИСПРАВЛЕНИЯ БД
+app.get('/admin/check-db', async (req, res) => {
+    try {
+        const db = require('./db');
+        console.log('📊 Проверка структуры таблицы orders...');
+        
+        const result = await db.query(`
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns 
+            WHERE table_name = 'orders' 
+            ORDER BY ordinal_position;
+        `);
+        
+        console.log('📊 Структура таблицы orders:');
+        result.rows.forEach(col => {
+            console.log(`   - ${col.column_name} (${col.data_type}) ${col.is_nullable === 'YES' ? 'NULL' : 'NOT NULL'} ${col.column_default ? `DEFAULT ${col.column_default}` : ''}`);
+        });
+        
+        res.json({ 
+            success: true,
+            table: 'orders',
+            columns: result.rows 
+        });
+    } catch (error) {
+        console.error('❌ Ошибка проверки БД:', error);
+        res.status(500).json({ 
+            success: false,
+            error: error.message 
+        });
+    }
+});
+
+app.post('/admin/fix-database', async (req, res) => {
+    try {
+        const db = require('./db');
+        console.log('🔧 Исправление структуры базы данных...');
+        
+        // Добавляем колонку quantity
+        await db.query(`
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1;
+        `);
+        console.log('✅ Колонка quantity добавлена в таблицу orders');
+        
+        // Добавляем колонку total_amount
+        await db.query(`
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(20,9);
+        `);
+        console.log('✅ Колонка total_amount добавлена в таблицу orders');
+        
+        // Добавляем колонку paid_at
+        await db.query(`
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
+        `);
+        console.log('✅ Колонка paid_at добавлена в таблицу orders');
+        
+        // Добавляем колонку payload для Telegram
+        await db.query(`
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS payload TEXT;
+        `);
+        console.log('✅ Колонка payload добавлена в таблицу orders');
+        
+        // Добавляем колонку telegram_invoice_data
+        await db.query(`
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT;
+        `);
+        console.log('✅ Колонка telegram_invoice_data добавлена в таблицу orders');
+        
+        res.json({ 
+            success: true, 
+            message: 'База данных исправлена - все колонки добавлены' 
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка исправления БД:', error);
+        res.status(500).json({ 
+            success: false,
+            error: error.message 
+        });
+    }
+});
+
 // Главная страница
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));

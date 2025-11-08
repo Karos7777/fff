@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Исправление БД</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .success {
+            background: #28a745;
+        }
+        .danger {
+            background: #dc3545;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border: 1px solid #dee2e6;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Исправление структуры базы данных</h1>
+        
+        <div class="actions">
+            <button onclick="checkDatabase()">📊 Проверить структуру БД</button>
+            <button onclick="fixDatabase()" class="success">🔧 Исправить БД</button>
+        </div>
+        
+        <div id="result"></div>
+        
+        <h2>📋 Инструкции:</h2>
+        <ol>
+            <li><strong>Проверить структуру БД</strong> - посмотреть текущие колонки в таблице orders</li>
+            <li><strong>Исправить БД</strong> - добавить недостающие колонки (quantity, total_amount, paid_at, payload, telegram_invoice_data)</li>
+            <li>После исправления попробуйте создать заказ - должно работать без ошибок</li>
+        </ol>
+        
+        <h2>🚨 Важно:</h2>
+        <p>После исправления БД удалите этот файл из продакшена!</p>
+    </div>
+
+    <script>
+        async function checkDatabase() {
+            showLoading();
+            try {
+                const response = await fetch('/admin/check-db');
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('success', `
+                        <h3>✅ Структура таблицы orders:</h3>
+                        <pre>${JSON.stringify(data.columns, null, 2)}</pre>
+                        <p><strong>Найдено колонок:</strong> ${data.columns.length}</p>
+                        <p><strong>Есть quantity:</strong> ${data.columns.some(c => c.column_name === 'quantity') ? '✅ Да' : '❌ Нет'}</p>
+                        <p><strong>Есть total_amount:</strong> ${data.columns.some(c => c.column_name === 'total_amount') ? '✅ Да' : '❌ Нет'}</p>
+                    `);
+                } else {
+                    showResult('error', `❌ Ошибка: ${data.error}`);
+                }
+            } catch (error) {
+                showResult('error', `❌ Ошибка запроса: ${error.message}`);
+            }
+        }
+
+        async function fixDatabase() {
+            if (!confirm('Вы уверены, что хотите изменить структуру базы данных?')) {
+                return;
+            }
+            
+            showLoading();
+            try {
+                const response = await fetch('/admin/fix-database', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('success', `
+                        <h3>✅ ${data.message}</h3>
+                        <p>Теперь можно попробовать создать заказ - должно работать!</p>
+                        <button onclick="checkDatabase()">🔄 Проверить результат</button>
+                    `);
+                } else {
+                    showResult('error', `❌ Ошибка: ${data.error}`);
+                }
+            } catch (error) {
+                showResult('error', `❌ Ошибка запроса: ${error.message}`);
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('result').innerHTML = '<p>⏳ Загрузка...</p>';
+        }
+
+        function showResult(type, html) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

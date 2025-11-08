@@ -91,6 +91,45 @@ class DatabaseService {
                 )
             `);
 
+            // Миграция: добавляем колонку quantity
+            try {
+                await this.dbLegacy.exec(`
+                    ALTER TABLE orders 
+                    ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1
+                `);
+                console.log('✅ Миграция: колонка quantity добавлена в orders');
+            } catch (e) {
+                if (!e.message.includes('already exists')) {
+                    console.error('⚠️ Ошибка миграции quantity:', e.message);
+                }
+            }
+
+            // Миграция: добавляем колонку total_amount
+            try {
+                await this.dbLegacy.exec(`
+                    ALTER TABLE orders 
+                    ADD COLUMN IF NOT EXISTS total_amount DECIMAL(20,9)
+                `);
+                console.log('✅ Миграция: колонка total_amount добавлена в orders');
+            } catch (e) {
+                if (!e.message.includes('already exists')) {
+                    console.error('⚠️ Ошибка миграции total_amount:', e.message);
+                }
+            }
+
+            // Миграция: добавляем колонку paid_at для orders
+            try {
+                await this.dbLegacy.exec(`
+                    ALTER TABLE orders 
+                    ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP
+                `);
+                console.log('✅ Миграция: колонка paid_at добавлена в orders');
+            } catch (e) {
+                if (!e.message.includes('already exists')) {
+                    console.error('⚠️ Ошибка миграции paid_at в orders:', e.message);
+                }
+            }
+
             // Таблица инвойсов (для платежей)
             await this.dbLegacy.exec(`
                 CREATE TABLE IF NOT EXISTS invoices (
