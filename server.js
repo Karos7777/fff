@@ -2,32 +2,29 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const cron = require('node-cron');
 
-// Импорт модулей
-const db = require('./db');
-const PostgresAdapter = require('./db-postgres');
-const { authMiddleware, authMiddlewareWithDB, generateToken } = require('./middleware/auth');
-const PaymentService = require('./payment-service');
+// Импорт сервисов
+const DatabaseService = require('./services/database');
+const PaymentService = require('./services/payment');
 const tonPolling = require('./services/tonPolling');
 
+// Импорт middleware
+const { authMiddlewareWithDB } = require('./middleware/auth');
+
 // Импорт роутов
-const authRoutes = require('./routes/auth');
+const authRoutes = require('./routes/auth/auth');
+const adminRoutes = require('./routes/admin');
+const usersRoutes = require('./routes/users');
 const productsRoutes = require('./routes/products');
-const paymentsRoutes = require('./routes/payments');
-const reviewsRoutes = require('./routes/reviews');
-const staticRoutes = require('./routes/static');
-const testRoutes = require('./routes/test');
-const telegramRoutes = require('./routes/telegram');
 const ordersRoutes = require('./routes/orders');
-const tonRoutes = require('./routes/ton');
+const reviewsRoutes = require('./routes/reviews');
+const telegramWebhooks = require('./routes/telegram/webhooks');
+const starsPayments = require('./routes/payments/stars');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 console.log('🔍 JWT_SECRET загружен:', !!process.env.JWT_SECRET);
@@ -42,7 +39,7 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     }
 }
 
-// Защита от ошибок: если токен не задан — предупреждение (но сервер запустится для разработки)
+// Защита от ошибок: если токен не задан — предупреждение
 if (!BOT_TOKEN) {
     console.warn('⚠️  ПРЕДУПРЕЖДЕНИЕ: Переменная BOT_TOKEN не задана!');
     console.warn('Для продакшена убедитесь, что вы добавили её в Environment Variables.');
@@ -67,310 +64,168 @@ app.use('/api', (req, res, next) => {
 app.use(bodyParser.json());
 app.use(express.static('public'));
 
-// Настройка multer для загрузки изображений
-const uploadsDir = 'public/uploads';
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueName = `${Date.now()}-${file.originalname}`;
-        cb(null, uniqueName);
-    }
-});
-const upload = multer({ storage });
-
-// Инициализация базы данных PostgreSQL
-const dbLegacy = new PostgresAdapter(process.env.DATABASE_URL);
-
-// authMiddlewareWithDB уже импортирован из модуля
-
-// Функция для создания таблиц PostgreSQL
-async function initDB() {
-    try {
-        console.log('🔄 Инициализация базы данных PostgreSQL...');
-        
-        // Таблица пользователей
-        await dbLegacy.exec(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                telegram_id BIGINT UNIQUE NOT NULL,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                is_admin BOOLEAN DEFAULT false,
-                referrer_id INTEGER,
-                referral_earnings DECIMAL(10,2) DEFAULT 0,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-
-        // Таблица товаров
-        await dbLegacy.exec(`
-            CREATE TABLE IF NOT EXISTS products (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                price DECIMAL(10,2) NOT NULL,
-                price_ton DECIMAL(10,4),
-                price_usdt DECIMAL(10,4),
-                price_stars INTEGER,
-                image_url TEXT,
-                category TEXT,
-                stock INTEGER DEFAULT 0,
-                infinite_stock BOOLEAN DEFAULT false,
-                is_active BOOLEAN DEFAULT true,
-                file_path TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-        
-        // Добавляем колонку file_path если её нет
-        try {
-            await dbLegacy.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
-        } catch (e) {
-            // Колонка уже существует
-        }
-
-        // Таблица отзывов
-        await dbLegacy.exec(`
-            CREATE TABLE IF NOT EXISTS reviews (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-                rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-                comment TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-        
-        // Миграция: добавляем новые колонки цен если их нет
-        try {
-            await dbLegacy.exec(`
-                ALTER TABLE products 
-                ADD COLUMN IF NOT EXISTS price_ton DECIMAL(10,4),
-                ADD COLUMN IF NOT EXISTS price_usdt DECIMAL(10,4),
-                ADD COLUMN IF NOT EXISTS price_stars INTEGER
-            `);
-            console.log('✅ Миграция: колонки price_ton, price_usdt, price_stars проверены/добавлены');
-        } catch (e) {
-            console.log('⚠️ Миграция цен: колонки уже существуют или ошибка:', e.message);
-        }
-        
-        // Таблица заказов
-        await dbLegacy.exec(`
-            CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-                status TEXT DEFAULT 'pending',
-                price DECIMAL(10,2),
-                payment_method TEXT,
-                transaction_hash TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-
-        // Таблица инвойсов (для платежей)
-        await dbLegacy.exec(`
-            CREATE TABLE IF NOT EXISTS invoices (
-                id SERIAL PRIMARY KEY,
-                order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                amount DECIMAL(20,9) NOT NULL,
-                currency TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                payment_url TEXT,
-                invoice_id TEXT UNIQUE,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-        
-        // Миграции для дополнительных колонок
-        const migrations = [
-            { 
-                name: 'amount type', 
-                sql: `ALTER TABLE invoices ALTER COLUMN amount TYPE DECIMAL(20,9)` 
-            },
-            { 
-                name: 'transaction_hash', 
-                sql: `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS transaction_hash TEXT` 
-            },
-            { 
-                name: 'paid_at', 
-                sql: `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP` 
-            },
-            { 
-                name: 'telegram_stars_columns', 
-                sql: `ALTER TABLE invoices 
-                      ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT,
-                      ADD COLUMN IF NOT EXISTS payload TEXT,
-                      ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP,
-                      ADD COLUMN IF NOT EXISTS address TEXT,
-                      ADD COLUMN IF NOT EXISTS memo TEXT,
-                      ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id)` 
-            }
-        ];
-
-        for (const migration of migrations) {
-            try {
-                await dbLegacy.exec(migration.sql);
-                console.log(`✅ Миграция: ${migration.name} выполнена`);
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error(`⚠️ Ошибка миграции ${migration.name}:`, e.message);
-                }
-            }
-        }
-
-        // Добавляем админа по умолчанию
-        await db.run(`
-            INSERT INTO users (telegram_id, username, is_admin) 
-            VALUES ($1, $2, $3)
-            ON CONFLICT (telegram_id) DO NOTHING
-        `, ['853232715', 'admin', true]);
-        
-        console.log('✅ База данных PostgreSQL инициализирована успешно');
-    } catch (error) {
-        console.error('❌ Ошибка инициализации базы данных:', error);
-        throw error;
-    }
-}
-
-// Инициализация сервиса платежей
+// Инициализация сервисов
+const databaseService = new DatabaseService();
 let paymentService;
 
-// Запускаем инициализацию (будет выполнено при старте сервера)
-initDB()
-    .then(async () => {
-        // После инициализации основных таблиц, инициализируем платежи
-        try {
-            paymentService = new PaymentService(db, BOT_TOKEN);
-            await paymentService.initPaymentTables();
-            console.log('✅ Сервис платежей инициализирован');
-            
-            // Сохраняем paymentService для доступа из роутов
-            app.set('paymentService', paymentService);
-            
-            console.log('✅ Модульные роуты подключены');
-            
-        } catch (error) {
-            console.error('❌ Ошибка инициализации сервиса платежей:', error);
-            // Не останавливаем сервер, продолжаем работу без платежей
-        }
-    })
-    .catch(err => {
-        console.error('❌ Ошибка при инициализации БД:', err);
-        console.log('⚠️ Сервер запускается без подключения к БД (режим разработки)');
-        
-        // Создаем mock paymentService для разработки
-        app.set('paymentService', {
-            createStarsInvoice: () => Promise.reject(new Error('БД недоступна')),
-            checkCryptoPayments: () => Promise.reject(new Error('БД недоступна'))
-        });
-    });
+// Сохраняем dbLegacy для доступа из роутов
+app.set('dbLegacy', databaseService.getDbLegacy());
 
-// === ПОДКЛЮЧЕНИЕ МОДУЛЬНЫХ РОУТОВ ===
+// Явные маршруты для важных файлов TON Connect
+app.get('/tonconnect-manifest.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.sendFile(path.join(__dirname, 'public', 'tonconnect-manifest.json'));
+});
 
-// Статические файлы и страницы
-app.use('/', staticRoutes);
+app.get('/icon.svg', (req, res) => {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.sendFile(path.join(__dirname, 'public', 'icon.svg'));
+});
 
-// API роуты
+app.get('/terms.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+});
+
+app.get('/privacy.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
+// Favicon
+app.get('/favicon.ico', (req, res) => {
+    res.setHeader('Content-Type', 'image/x-icon');
+    res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
+// Health check endpoint
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// Подключение роутов
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/user', usersRoutes);
 app.use('/api/products', productsRoutes);
-app.use('/api/payments', authMiddlewareWithDB, paymentsRoutes);
-app.use('/api/reviews', authMiddlewareWithDB, reviewsRoutes);
 app.use('/api/orders', ordersRoutes(authMiddlewareWithDB));
-app.use('/api/ton', tonRoutes(authMiddlewareWithDB));
-app.use('/api/telegram', telegramRoutes);
+app.use('/api/reviews', reviewsRoutes);
+app.use('/api/telegram', telegramWebhooks);
+app.use('/api/payments/stars', starsPayments);
 
-// Добавляем middleware к защищенным роутам auth
-app.use('/api/user', authMiddlewareWithDB, authRoutes);
+// Главная страница
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-// Тестовые эндпоинты (только для разработки)
-if (process.env.NODE_ENV !== 'production') {
-    app.use('/api/test', testRoutes);
+// Админ панель
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Инициализация и запуск сервера
+const startServer = async () => {
+    try {
+        // Инициализация базы данных
+        await databaseService.initDB();
+        
+        // Инициализация сервиса платежей
+        paymentService = new PaymentService(require('./db'), BOT_TOKEN);
+        await paymentService.initPaymentTables();
+        console.log('✅ Сервис платежей инициализирован');
+        
+        // Сохраняем paymentService для доступа из роутов
+        app.set('paymentService', paymentService);
+        
+        // Запуск сервера
+        const targetPort = process.env.PORT || PORT;
+        
+        app.listen(targetPort, '0.0.0.0', () => {
+            console.log(`🚀 Сервер запущен на порту ${targetPort}`);
+            console.log(`🏠 Главная страница: http://localhost:${targetPort}`);
+            console.log(`⚙️  Админ панель: http://localhost:${targetPort}/admin`);
+            console.log(`❤️  Health check: http://localhost:${targetPort}/healthz`);
+            
+            if (BOT_TOKEN) {
+                console.log('✅ BOT_TOKEN настроен');
+            } else {
+                console.log('⚠️  BOT_TOKEN не настроен - уведомления Telegram недоступны');
+            }
+            
+            // Запуск TON polling
+            tonPolling();
+            
+            // Настройка cron задач
+            setupCronJobs();
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка запуска сервера:', error);
+        process.exit(1);
+    }
+};
+
+// Настройка автоматических задач
+function setupCronJobs() {
+    // Проверка криптоплатежей каждые 30 секунд
+    if (paymentService) {
+        cron.schedule('*/30 * * * * *', () => {
+            console.log('🔄 Запуск автоматической проверки платежей...');
+            paymentService.checkCryptoPayments();
+        });
+
+        // Очистка просроченных инвойсов каждые 10 минут
+        cron.schedule('*/10 * * * *', () => {
+            try {
+                paymentService.cancelExpiredInvoices();
+            } catch (error) {
+                console.error('Ошибка очистки просроченных инвойсов:', error);
+            }
+        });
+
+        console.log('✅ Автоматические задачи платежей настроены');
+    }
+    
+    // Запускаем cron задачу для автоматической отмены истёкших заказов
+    console.log('⏰ Запуск cron задачи для автоудаления заказов (каждые 5 минут)');
+    cron.schedule('*/5 * * * *', async () => {
+        try {
+            console.log('\n⏰ [CRON] Проверка истёкших заказов...');
+            
+            const db = require('./db');
+            const now = new Date();
+            const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            
+            // Находим все заказы старше 1 часа со статусом pending
+            const expiredOrdersResult = await db.query(`
+                SELECT * FROM orders 
+                WHERE status IN ('pending', 'pending_crypto') 
+                AND created_at < $1
+            `, [hourAgo.toISOString()]);
+            
+            const expiredOrders = expiredOrdersResult.rows;
+            
+            if (expiredOrders.length > 0) {
+                console.log(`⏰ [CRON] Найдено истёкших заказов: ${expiredOrders.length}`);
+                
+                // Удаляем истёкшие заказы полностью
+                for (const order of expiredOrders) {
+                    // Сначала удаляем связанные инвойсы
+                    await db.query('DELETE FROM invoices WHERE order_id = $1', [order.id]);
+                    
+                    // Затем удаляем сам заказ
+                    await db.query('DELETE FROM orders WHERE id = $1', [order.id]);
+                    
+                    console.log(`🗑️ [CRON] Заказ #${order.id} удалён (истёк)`);
+                }
+                
+                console.log(`✅ [CRON] Удалено заказов: ${expiredOrders.length}`);
+            } else {
+                console.log('⏰ [CRON] Истёкших заказов не найдено');
+            }
+        } catch (error) {
+            console.error('❌ [CRON] Ошибка при проверке заказов:', error);
+        }
+    });
 }
 
-// Дополнительные эндпоинты, которые остались в основном файле
-
-// Эндпоинт для отмены/истечения заказа
-app.post('/api/orders/:id/expire', authMiddlewareWithDB, async (req, res) => {
-    try {
-        const orderId = parseInt(req.params.id);
-        const userId = req.user.id;
-        
-        console.log('⏰ [EXPIRE] Попытка отмены заказа:', { orderId, userId });
-        
-        if (!orderId || isNaN(orderId)) {
-            return res.status(400).json({ error: 'Неверный ID заказа' });
-        }
-        
-        // Проверяем существование заказа и принадлежность пользователю
-        const orderResult = await db.query('SELECT * FROM orders WHERE id = $1 AND user_id = $2', [orderId, userId]);
-        const order = orderResult.rows[0];
-        
-        if (!order) {
-            console.log('❌ [EXPIRE] Заказ не найден или не принадлежит пользователю');
-            return res.status(404).json({ error: 'Заказ не найден' });
-        }
-        
-        // Проверяем статус заказа
-        if (order.status === 'paid') {
-            console.log('❌ [EXPIRE] Нельзя отменить оплаченный заказ');
-            return res.status(400).json({ error: 'Нельзя отменить оплаченный заказ' });
-        }
-        
-        // Обновляем статус заказа на expired
-        await db.query('UPDATE orders SET status = $1 WHERE id = $2', ['expired', orderId]);
-        
-        console.log('✅ [EXPIRE] Заказ успешно отменен:', orderId);
-        
-        res.json({
-            success: true,
-            message: 'Заказ успешно отменен',
-            orderId: orderId
-        });
-        
-    } catch (error) {
-        console.error('❌ [EXPIRE] Ошибка отмены заказа:', error);
-        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
-    }
-});
-
-// Cron задача для автоматического удаления старых заказов
-cron.schedule('*/10 * * * *', async () => {
-    try {
-        console.log('🧹 [CRON] Запуск задачи удаления старых заказов...');
-        
-        // Удаляем заказы старше 1 часа со статусом pending или expired
-        const result = await db.query(`
-            DELETE FROM orders 
-            WHERE status IN ('pending', 'expired') 
-            AND created_at < NOW() - INTERVAL '1 hour'
-        `);
-        
-        if (result.rowCount > 0) {
-            console.log(`🗑️ [CRON] Удалено ${result.rowCount} старых заказов`);
-        }
-    } catch (error) {
-        console.error('❌ [CRON] Ошибка удаления старых заказов:', error);
-    }
-});
-
-// Запуск сервера
-app.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
-    console.log(`📱 WebApp URL: ${process.env.WEBAPP_URL || `http://localhost:${PORT}`}`);
-    
-    // Запуск TON polling если включен
-    if (process.env.ENABLE_TON_POLLING === 'true') {
-        console.log('🔄 Запуск TON polling...');
-        tonPolling.start();
-    }
-});
-
-module.exports = app;
+startServer();

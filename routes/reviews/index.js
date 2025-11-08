@@ -1,10 +1,11 @@
 const express = require('express');
 const db = require('../../db');
+const { authMiddlewareWithDB } = require('../../middleware/auth');
 
 const router = express.Router();
 
 // Эндпоинт для добавления отзыва
-router.post('/', async (req, res) => {
+router.post('/', authMiddlewareWithDB, async (req, res) => {
     try {
         const { product_id, order_id, rating, comment } = req.body;
         const userId = req.user.id;

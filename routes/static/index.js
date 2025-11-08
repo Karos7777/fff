@@ -29,29 +29,14 @@ router.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, '../../public', 'favicon.ico'));
 });
 
-// Тестовые страницы
-router.get('/test-payment.html', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../test-payment.html'));
+// Главная страница
+router.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../public', 'index.html'));
 });
 
-router.get('/real-test.html', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../real-test.html'));
-});
-
-router.get('/debug-test.html', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../debug-test.html'));
-});
-
-router.get('/orders.html', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../orders.html'));
-});
-
-router.get('/debug-payments.html', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../debug-payments.html'));
-});
-
-router.get('/admin-panel.html', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../admin-panel.html'));
+// Админ панель
+router.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../public', 'admin.html'));
 });
 
 // Health check endpoint для предотвращения засыпания на бесплатном тарифе
