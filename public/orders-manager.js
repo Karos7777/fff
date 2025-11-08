@@ -33,19 +33,17 @@ async function loadOrders() {
     console.log('📦 [ORDERS] Загрузка заказов пользователя');
     
     try {
-        const token = localStorage.getItem('authToken');
-        if (!token) {
-            throw new Error('Необходима авторизация');
-        }
-        
+        // Используем перехватчик - токен добавится автоматически
         const response = await fetch('/api/orders', {
             headers: {
-                'Authorization': `Bearer ${token}`,
                 'Cache-Control': 'no-cache'
             }
         });
         
         if (!response.ok) {
+            if (response.status === 401) {
+                throw new Error('Требуется авторизация');
+            }
             throw new Error('Ошибка загрузки заказов');
         }
         
@@ -269,12 +267,9 @@ async function autoExpireOrder(orderId) {
     console.log('⏰ [ORDERS] Автоматическое истечение заказа:', orderId);
     
     try {
-        const token = localStorage.getItem('authToken');
+        // Используем перехватчик - токен добавится автоматически
         const response = await fetch(`/api/orders/${orderId}/expire`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            method: 'POST'
         });
         
         if (response.ok) {
@@ -304,12 +299,9 @@ async function cancelOrder(orderId) {
     }
     
     try {
-        const token = localStorage.getItem('authToken');
+        // Используем перехватчик - токен добавится автоматически
         const response = await fetch(`/api/orders/${orderId}/expire`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            method: 'POST'
         });
         
         if (!response.ok) {
@@ -390,12 +382,11 @@ async function handleReviewSubmit(e) {
     try {
         showLoading();
         
-        const token = localStorage.getItem('authToken');
+        // Используем перехватчик - токен добавится автоматически
         const response = await fetch('/api/reviews', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 product_id: productId,
@@ -527,12 +518,9 @@ async function deleteOrder(orderId) {
     }
     
     try {
-        const token = localStorage.getItem('authToken');
+        // Используем перехватчик - токен добавится автоматически
         const response = await fetch(`/api/orders/${orderId}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            method: 'DELETE'
         });
         
         if (!response.ok) {
@@ -583,12 +571,9 @@ async function checkTonPayment(orderId) {
         showLoading();
         console.log('[TON CHECK] Проверка оплаты заказа:', orderId);
         
-        const token = localStorage.getItem('authToken');
+        // Используем перехватчик - токен добавится автоматически
         const response = await fetch(`/api/ton/check/${orderId}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            method: 'GET'
         });
         
         if (!response.ok) {
@@ -646,12 +631,8 @@ async function openPaymentForOrder(orderId, productId) {
         }
         
         // Получаем информацию о товаре
-        const token = localStorage.getItem('authToken');
-        const response = await fetch(`/api/products/${productId}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        // Используем перехватчик - токен добавится автоматически
+        const response = await fetch(`/api/products/${productId}`);
         
         if (!response.ok) {
             throw new Error('Ошибка загрузки товара');

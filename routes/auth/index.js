@@ -264,4 +264,30 @@ router.get('/profile', (req, res, next) => {
     }
 });
 
+// Эндпоинт для проверки токена
+router.get('/verify', (req, res, next) => {
+    // Middleware будет добавлен при подключении роута
+    next();
+}, async (req, res) => {
+    try {
+        console.log('🔍 [VERIFY] Проверка токена для пользователя:', req.user.telegram_id);
+        
+        res.json({
+            success: true,
+            user: {
+                id: req.user.id,
+                telegram_id: req.user.telegram_id,
+                first_name: req.user.first_name,
+                last_name: req.user.last_name,
+                username: req.user.username,
+                is_admin: req.user.is_admin,
+                created_at: req.user.created_at
+            }
+        });
+    } catch (error) {
+        console.error('❌ [VERIFY] Ошибка проверки токена:', error);
+        res.status(500).json({ error: 'Ошибка проверки токена' });
+    }
+});
+
 module.exports = router;

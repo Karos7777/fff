@@ -10,8 +10,8 @@ const Utils = {
         if (storedVersion !== CONFIG.APP_VERSION) {
             console.log('⚠️ [VERSION] Обнаружено обновление! Очистка кеша...');
             
-            // Для версии 3.3.1 принудительно очищаем токены из-за проблем с JWT
-            const forceTokenClear = CONFIG.APP_VERSION === '3.3.1';
+            // Для версий 3.3.1 и 3.4.0 принудительно очищаем токены из-за проблем с JWT
+            const forceTokenClear = ['3.3.1', '3.4.0'].includes(CONFIG.APP_VERSION);
             
             // Сохраняем важные данные перед очисткой (кроме токенов если нужна принудительная очистка)
             const authToken = forceTokenClear ? null : localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
@@ -259,37 +259,57 @@ const Utils = {
         }
     },
 
-    // API запросы с обработкой ошибок
+    // API запрос с обработкой ошибок (теперь использует перехватчик)
     async apiRequest(url, options = {}) {
-        const token = localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
-        
-        const defaultOptions = {
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token && { 'Authorization': `Bearer ${token}` })
-            }
-        };
-        
-        const finalOptions = {
-            ...defaultOptions,
-            ...options,
-            headers: {
-                ...defaultOptions.headers,
-                ...options.headers
-            }
-        };
-        
         try {
-            const response = await fetch(url, finalOptions);
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+            
+            // Перехватчик автоматически добавит токен, если он есть
+            const response = await fetch(url, { ...defaultOptions, ...options });
             
             if (!response.ok) {
+                // Перехватчик уже обработает 401 ошибки
+                if (response.status === 401) {
+                    throw new Error('Требуется авторизация');
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             return await response.json();
         } catch (error) {
-            console.error('API Request Error:', error);
+            console.error('❌ [API] Ошибка запроса:', error);
             throw error;
+        }
+    },
+
+    // Проверка токена на валидность
+    async verifyToken() {
+        try {
+            const token = localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
+            if (!token) {
+                return false;
+            }
+
+            const response = await fetch('/api/auth/verify');
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.user) {
+                    // Обновляем данные пользователя
+                    localStorage.setItem(CONFIG.CACHE_KEYS.CURRENT_USER, JSON.stringify(data.user));
+                    window.currentUser = data.user;
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (error) {
+            console.error('❌ [TOKEN] Ошибка проверки токена:', error);
+            return false;
         }
     },
 

@@ -1,6 +1,68 @@
 // Модуль аутентификации
 
 const Auth = {
+    // Инициализация перехватчика для обработки 401 ошибок
+    initAuthInterceptor() {
+        console.log('🔧 [AUTH] Инициализация перехватчика аутентификации');
+        
+        // Сохраняем оригинальный fetch
+        const originalFetch = window.fetch;
+        
+        window.fetch = async function(...args) {
+            const [resource, config = {}] = args;
+            
+            // Добавляем токен в заголовки, если он есть
+            const token = localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
+            if (token && !config.headers?.Authorization) {
+                config.headers = {
+                    ...config.headers,
+                    'Authorization': `Bearer ${token}`
+                };
+            }
+
+            const response = await originalFetch(resource, config);
+
+            // Если токен недействителен, очищаем и перенаправляем
+            if (response.status === 401) {
+                console.log('🔄 [AUTH] Токен недействителен, требуется переаутентификация');
+                Auth.clearAuthToken();
+                
+                // Если мы в Telegram WebApp, пытаемся переаутентифицироваться
+                if (window.Telegram?.WebApp) {
+                    console.log('📱 [AUTH] Попытка автоматической переаутентификации в Telegram');
+                    setTimeout(() => {
+                        Auth.autoAuth();
+                    }, 1000);
+                } else {
+                    // В браузере показываем форму авторизации
+                    Utils.showAuthSection();
+                }
+            }
+
+            return response;
+        };
+    },
+
+    // Функция для сохранения токена после аутентификации
+    saveAuthToken(token) {
+        if (token) {
+            localStorage.setItem(CONFIG.CACHE_KEYS.AUTH_TOKEN, token);
+            console.log('✅ [AUTH] Токен сохранен в localStorage');
+        }
+    },
+
+    // Функция для получения токена
+    getAuthToken() {
+        return localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
+    },
+
+    // Функция для очистки токена
+    clearAuthToken() {
+        localStorage.removeItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
+        localStorage.removeItem(CONFIG.CACHE_KEYS.CURRENT_USER);
+        window.currentUser = null;
+        console.log('🧹 [AUTH] Токен и данные пользователя очищены');
+    },
     // Автоматическая авторизация при загрузке
     async autoAuth() {
         console.log('🔐 [AUTH] ========== НАЧАЛО АВТОМАТИЧЕСКОЙ АВТОРИЗАЦИИ ==========');

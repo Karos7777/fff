@@ -30,8 +30,17 @@ const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
-console.log('🔍 JWT_SECRET загружен:', JWT_SECRET ? 'да' : 'нет');
-console.log('🔑 JWT_SECRET:', JWT_SECRET.substring(0, 20) + '...');
+console.log('🔍 JWT_SECRET загружен:', !!process.env.JWT_SECRET);
+console.log('🔑 JWT_SECRET:', process.env.JWT_SECRET ? process.env.JWT_SECRET.substring(0, 20) + '...' : 'НЕ УСТАНОВЛЕН');
+
+// Проверка JWT_SECRET
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    console.error('❌ JWT_SECRET слишком короткий или не установлен');
+    console.error('💡 Рекомендуется использовать JWT_SECRET длиной не менее 32 символов');
+    if (!process.env.JWT_SECRET) {
+        console.error('🔧 Установите JWT_SECRET в переменных окружения');
+    }
+}
 
 // Защита от ошибок: если токен не задан — предупреждение (но сервер запустится для разработки)
 if (!BOT_TOKEN) {

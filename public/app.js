@@ -68,6 +68,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             Utils.validateToken(token);
         }
         
+        // Инициализируем перехватчик аутентификации
+        Auth.initAuthInterceptor();
+        
         // Инициализируем интерфейс
         Interface.init();
         
