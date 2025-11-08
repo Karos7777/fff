@@ -1,6 +1,18 @@
 // Версия приложения (обновляйте при каждом изменении)
 const APP_VERSION = '3.5.3';
 
+// Глобальный обработчик ошибок
+window.addEventListener('error', function(e) {
+    console.log('🛠️ Global error handler:', e.error);
+    return true; // Предотвращает падение приложения
+});
+
+// Обработчик необработанных промисов
+window.addEventListener('unhandledrejection', function(e) {
+    console.log('🛠️ Unhandled promise rejection:', e.reason);
+    e.preventDefault();
+});
+
 // Инициализация перехватчика для автоматического добавления токенов
 (function initAuthInterceptor() {
   console.log('🔧 [AUTH] Инициализация перехватчика аутентификации');
@@ -434,8 +446,15 @@ function applyTranslations() {
     });
   
     // Обновляем опции в select-ах
-    document.getElementById('categoryFilter').options[0].textContent = t.allCategories;
-    document.getElementById('priceFilter').options[0].textContent = t.anyPrice;
+    const categoryFilter = document.getElementById('categoryFilter');
+    if (categoryFilter && categoryFilter.options[0]) {
+        categoryFilter.options[0].textContent = t.allCategories;
+    }
+    
+    const priceFilter = document.getElementById('priceFilter');
+    if (priceFilter && priceFilter.options[0]) {
+        priceFilter.options[0].textContent = t.anyPrice;
+    }
     
     // Обновляем динамические тексты (которые зависят от данных, а не статичны)
     // Это важно вызывать при каждой смене языка
@@ -1091,23 +1110,36 @@ async function loadProducts(forceReload = false) {
             throw new Error('Ошибка загрузки товаров');
         }
         
-        products = await response.json();
-        console.log('✅ [LOAD] Загружено товаров:', products.length);
-        console.log('📦 [LOAD] Первые 3 товара:', products.slice(0, 3));
+        const rawProducts = await response.json();
+        console.log('✅ [LOAD] Загружено товаров:', rawProducts.length);
+        console.log('📦 [LOAD] Первые 3 товара:', rawProducts.slice(0, 3));
         
-        // Добавляем дополнительные поля для демонстрации (если их нет в БД)
-        products = products.map(product => ({
-            ...product,
-            rating: product.rating || 0,
-            reviewsCount: product.reviewsCount || 0,
-            stock: product.stock || 0,
-            infinite_stock: product.infinite_stock || false,
-            isHit: product.isHit || false,
-            isNew: product.isNew || false,
-            isSale: product.isSale || false,
-            oldPrice: product.isSale ? product.price * 1.3 : null,
-            saleEnds: product.isSale ? new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000) : null
-        }));
+        // Валидируем и нормализуем данные товаров
+        products = rawProducts.map(product => {
+            // Безопасно преобразуем цены в числа
+            const validatedProduct = {
+                ...product,
+                price: product.price ? (typeof product.price === 'string' ? parseFloat(product.price) : product.price) : 0,
+                price_ton: product.price_ton ? (typeof product.price_ton === 'string' ? parseFloat(product.price_ton) : product.price_ton) : null,
+                price_usdt: product.price_usdt ? (typeof product.price_usdt === 'string' ? parseFloat(product.price_usdt) : product.price_usdt) : null,
+                price_stars: product.price_stars ? (typeof product.price_stars === 'string' ? parseInt(product.price_stars) : product.price_stars) : null,
+                rating: product.rating || 0,
+                reviewsCount: product.reviewsCount || 0,
+                stock: product.stock || 0,
+                infinite_stock: product.infinite_stock || false,
+                isHit: product.isHit || false,
+                isNew: product.isNew || false,
+                isSale: product.isSale || false
+            };
+            
+            // Добавляем дополнительные поля для демонстрации
+            validatedProduct.oldPrice = validatedProduct.isSale ? validatedProduct.price * 1.3 : null;
+            validatedProduct.saleEnds = validatedProduct.isSale ? new Date(Date.now() + Math.random() * 7 * 24 * 60 * 60 * 1000) : null;
+            
+            return validatedProduct;
+        });
+        
+        console.log('✅ [LOAD] Товары после валидации:', products.slice(0, 2));
         
         // Обновляем поисковые подсказки
         updateSearchSuggestions();
@@ -1129,17 +1161,26 @@ function formatPrice(product) {
     
     // Добавляем цену в TON если указана
     if (product.price_ton && product.price_ton > 0) {
-        prices.push(`${product.price_ton.toFixed(2)} TON`);
+        const priceTon = typeof product.price_ton === 'string' ? parseFloat(product.price_ton) : product.price_ton;
+        if (!isNaN(priceTon)) {
+            prices.push(`${priceTon.toFixed(2)} TON`);
+        }
     }
     
     // Добавляем цену в USDT если указана
     if (product.price_usdt && product.price_usdt > 0) {
-        prices.push(`${product.price_usdt.toFixed(2)} USDT`);
+        const priceUsdt = typeof product.price_usdt === 'string' ? parseFloat(product.price_usdt) : product.price_usdt;
+        if (!isNaN(priceUsdt)) {
+            prices.push(`${priceUsdt.toFixed(2)} USDT`);
+        }
     }
     
     // Добавляем цену в Stars если указана
     if (product.price_stars && product.price_stars > 0) {
-        prices.push(`${product.price_stars} Stars`);
+        const priceStars = typeof product.price_stars === 'string' ? parseInt(product.price_stars) : product.price_stars;
+        if (!isNaN(priceStars)) {
+            prices.push(`${priceStars} Stars`);
+        }
     }
     
     // Если есть криптоцены, показываем их
@@ -1148,7 +1189,8 @@ function formatPrice(product) {
     }
     
     // Fallback - показываем обычную цену в долларах
-    return `$${(product.price || 0).toFixed(2)}`;
+    const fallbackPrice = typeof product.price === 'string' ? parseFloat(product.price) : (product.price || 0);
+    return `$${(isNaN(fallbackPrice) ? 0 : fallbackPrice).toFixed(2)}`;
 }
 
 // Обновление поисковых подсказок
@@ -1265,9 +1307,20 @@ function filterProducts() {
 
 // Отображение товаров
 function renderProducts(productsToRender) {
-    const productsGrid = document.getElementById('productsGrid');
-    
-    if (productsToRender.length === 0) {
+    try {
+        // Проверяем валидность данных
+        if (!productsToRender || !Array.isArray(productsToRender)) {
+            console.error('❌ Invalid products data:', productsToRender);
+            return;
+        }
+        
+        const productsGrid = document.getElementById('productsGrid');
+        if (!productsGrid) {
+            console.error('❌ Products grid element not found');
+            return;
+        }
+        
+        if (productsToRender.length === 0) {
         productsGrid.innerHTML = `
             <div class="empty-state">
                 <h3>${translations[currentLang].noProducts}</h3>
@@ -1382,6 +1435,14 @@ function renderProducts(productsToRender) {
             </div>
         `;
     }).join('');
+    
+    } catch (error) {
+        console.error('❌ Error rendering products:', error);
+        const productsGrid = document.getElementById('productsGrid');
+        if (productsGrid) {
+            productsGrid.innerHTML = '<div class="error-state">Ошибка отображения товаров</div>';
+        }
+    }
 }
 
 // Генерация звездочек рейтинга
