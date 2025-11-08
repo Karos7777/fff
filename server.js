@@ -376,6 +376,24 @@ async function initDB() {
       }
     }
 
+    // Миграция: добавляем колонки для Telegram Stars
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE invoices 
+        ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT,
+        ADD COLUMN IF NOT EXISTS payload TEXT,
+        ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS address TEXT,
+        ADD COLUMN IF NOT EXISTS memo TEXT,
+        ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id)
+      `);
+      console.log('✅ Миграция: колонки для Telegram Stars добавлены');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('⚠️ Ошибка миграции Telegram Stars:', e.message);
+      }
+    }
+
     // Добавляем админа по умолчанию
     await db.run(`
       INSERT INTO users (telegram_id, username, is_admin) 
@@ -763,6 +781,176 @@ app.post('/api/create-payment', authMiddlewareWithDB, async (req, res) => {
   } catch (error) {
     console.error('❌ [CREATE-PAYMENT] Ошибка создания платежа:', error);
     res.status(500).json({ error: 'Ошибка создания платежа: ' + error.message });
+  }
+});
+
+// Эндпоинт для создания Telegram Stars инвойса
+app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { orderId, productId, amount, description } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [STARS] Создание Stars инвойса:', { userId, orderId, productId, amount });
+    
+    if (!orderId || !productId || !amount) {
+      return res.status(400).json({ error: 'Необходимы orderId, productId и amount' });
+    }
+    
+    // Проверяем заказ
+    const orderResult = await db.query(
+      'SELECT * FROM orders WHERE id = $1 AND user_id = $2', 
+      [orderId, userId]
+    );
+    
+    const order = orderResult.rows[0];
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    // Проверяем товар
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [productId]);
+    const product = productResult.rows[0];
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Вычисляем цену в Stars (примерно 1$ = 100 Stars)
+    const starsAmount = Math.ceil(parseFloat(amount) * 100);
+    
+    // Создаем уникальный payload для отслеживания платежа
+    const payload = `stars_${orderId}_${Date.now()}`;
+    
+    // Создаем инвойс для Telegram Stars
+    const telegramInvoice = {
+      title: product.name,
+      description: description || product.description || 'Покупка в магазине',
+      payload: payload,
+      provider_token: '', // Для Stars не нужен
+      currency: 'XTR', // Telegram Stars
+      prices: [{ label: product.name, amount: starsAmount }],
+      max_tip_amount: 0,
+      suggested_tip_amounts: [],
+      start_parameter: `stars_${orderId}`,
+      provider_data: JSON.stringify({
+        receipt: {
+          items: [{
+            description: product.name,
+            quantity: '1',
+            amount: { value: starsAmount, currency: 'XTR' }
+          }]
+        }
+      }),
+      photo_url: product.image_url || null,
+      photo_size: product.image_url ? 512 : null,
+      photo_width: product.image_url ? 512 : null,
+      photo_height: product.image_url ? 512 : null,
+      need_name: false,
+      need_phone_number: false,
+      need_email: false,
+      need_shipping_address: false,
+      send_phone_number_to_provider: false,
+      send_email_to_provider: false,
+      is_flexible: false
+    };
+    
+    // Сохраняем инвойс в базу данных
+    const invoiceResult = await db.query(`
+      INSERT INTO invoices (
+        order_id, user_id, product_id, amount, currency, 
+        address, memo, status, expires_at, payload, 
+        telegram_invoice_data, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) 
+      RETURNING *
+    `, [
+      orderId, userId, productId, starsAmount, 'XTR',
+      null, payload, 'pending', 
+      new Date(Date.now() + 60 * 60 * 1000), // 1 час
+      payload, JSON.stringify(telegramInvoice)
+    ]);
+    
+    const invoice = invoiceResult.rows[0];
+    
+    console.log('✅ [STARS] Stars инвойс создан:', { invoiceId: invoice.id, payload, starsAmount });
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        payload: payload,
+        amount: starsAmount,
+        currency: 'XTR',
+        expiresAt: invoice.expires_at,
+        telegramInvoice: telegramInvoice
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ [STARS] Ошибка создания Stars инвойса:', error);
+    res.status(500).json({ error: 'Ошибка создания инвойса: ' + error.message });
+  }
+});
+
+// Webhook для обработки Telegram Stars платежей
+app.post('/api/payments/stars/webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    console.log('⭐ [STARS-WEBHOOK] Получен update:', JSON.stringify(update, null, 2));
+    
+    // Обрабатываем successful_payment
+    if (update.message && update.message.successful_payment) {
+      const payment = update.message.successful_payment;
+      const payload = payment.invoice_payload;
+      
+      console.log('💰 [STARS-WEBHOOK] Успешный платеж:', { payload, amount: payment.total_amount });
+      
+      // Находим инвойс по payload
+      const invoiceResult = await db.query(
+        'SELECT * FROM invoices WHERE payload = $1 AND status = $2',
+        [payload, 'pending']
+      );
+      
+      const invoice = invoiceResult.rows[0];
+      if (!invoice) {
+        console.log('⚠️ [STARS-WEBHOOK] Инвойс не найден:', payload);
+        return res.json({ ok: true });
+      }
+      
+      // Обновляем статус инвойса и заказа
+      await db.query('UPDATE invoices SET status = $1, paid_at = NOW() WHERE id = $2', ['paid', invoice.id]);
+      await db.query('UPDATE orders SET status = $1 WHERE id = $2', ['paid', invoice.order_id]);
+      
+      console.log('✅ [STARS-WEBHOOK] Платеж обработан:', { 
+        invoiceId: invoice.id, 
+        orderId: invoice.order_id 
+      });
+      
+      // Уведомляем пользователя (если настроен BOT_TOKEN)
+      if (process.env.BOT_TOKEN) {
+        try {
+          const productResult = await db.query('SELECT name FROM products WHERE id = $1', [invoice.product_id]);
+          const product = productResult.rows[0];
+          
+          await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: update.message.from.id,
+              text: `🎉 Платеж успешно обработан!\n\n📦 Товар: ${product?.name}\n💰 Сумма: ${payment.total_amount} Stars\n\nСпасибо за покупку!`,
+              parse_mode: 'HTML'
+            })
+          });
+        } catch (notifyError) {
+          console.error('❌ [STARS-WEBHOOK] Ошибка уведомления:', notifyError);
+        }
+      }
+    }
+    
+    res.json({ ok: true });
+    
+  } catch (error) {
+    console.error('❌ [STARS-WEBHOOK] Ошибка обработки webhook:', error);
+    res.status(500).json({ error: 'Ошибка обработки платежа' });
   }
 });
 
@@ -1257,8 +1445,8 @@ const startServer = async () => {
       tonPolling(); // db импортируется внутри модуля
       
       // Запускаем cron задачу для автоматической отмены истёкших заказов
-      console.log('⏰ Запуск cron задачи для автоотмены заказов (каждые 5 минут)');
-      cron.schedule('*/5 * * * *', () => {
+      console.log('⏰ Запуск cron задачи для автоудаления заказов (каждые 5 минут)');
+      cron.schedule('*/5 * * * *', async () => {
         try {
           console.log('\n⏰ [CRON] Проверка истёкших заказов...');
           
@@ -1266,25 +1454,29 @@ const startServer = async () => {
           const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
           
           // Находим все заказы старше 1 часа со статусом pending
-          const getExpiredOrders = dbLegacy.prepare(`
+          const expiredOrdersResult = await db.query(`
             SELECT * FROM orders 
             WHERE status IN ('pending', 'pending_crypto') 
-            AND created_at < ?
-          `);
+            AND created_at < $1
+          `, [hourAgo.toISOString()]);
           
-          const expiredOrders = getExpiredOrders.all(hourAgo.toISOString());
+          const expiredOrders = expiredOrdersResult.rows;
           
           if (expiredOrders.length > 0) {
             console.log(`⏰ [CRON] Найдено истёкших заказов: ${expiredOrders.length}`);
             
-            const updateOrder = dbLegacy.prepare('UPDATE orders SET status = ? WHERE id = ?');
+            // Удаляем истёкшие заказы полностью
+            for (const order of expiredOrders) {
+              // Сначала удаляем связанные инвойсы
+              await db.query('DELETE FROM invoices WHERE order_id = $1', [order.id]);
+              
+              // Затем удаляем сам заказ
+              await db.query('DELETE FROM orders WHERE id = $1', [order.id]);
+              
+              console.log(`🗑️ [CRON] Заказ #${order.id} удалён (истёк)`);
+            }
             
-            expiredOrders.forEach(order => {
-              updateOrder.run('expired', order.id);
-              console.log(`⏰ [CRON] Заказ #${order.id} отменён (истёк)`);
-            });
-            
-            console.log(`✅ [CRON] Обработано заказов: ${expiredOrders.length}`);
+            console.log(`✅ [CRON] Удалено заказов: ${expiredOrders.length}`);
           } else {
             console.log('⏰ [CRON] Истёкших заказов не найдено');
           }

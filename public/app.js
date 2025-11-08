@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.5.4';
+const APP_VERSION = '2.6.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -528,14 +528,14 @@ function setupEventListeners() {
     }
 
     // Фильтры
-    const categoryFilter = document.getElementById('categoryFilter');
-    if (categoryFilter) {
-        categoryFilter.addEventListener('change', handleFilterChange);
+    const priceFrom = document.getElementById('priceFrom');
+    if (priceFrom) {
+        priceFrom.addEventListener('input', handleFilterChange);
     }
 
-    const priceFilter = document.getElementById('priceFilter');
-    if (priceFilter) {
-        priceFilter.addEventListener('change', handleFilterChange);
+    const priceTo = document.getElementById('priceTo');
+    if (priceTo) {
+        priceTo.addEventListener('input', handleFilterChange);
     }
 
     const sortFilter = document.getElementById('sortFilter');
@@ -547,17 +547,6 @@ function setupEventListeners() {
     if (stockFilter) {
         stockFilter.addEventListener('change', handleFilterChange);
     }
-
-    // Популярные категории
-    const categoryCards = document.querySelectorAll('.category-card');
-    categoryCards.forEach(card => {
-        card.addEventListener('click', function(e) {
-            e.preventDefault();
-            const category = this.getAttribute('data-category');
-            document.getElementById('categoryFilter').value = category;
-            handleFilterChange();
-        });
-    });
 
     // Модальные окна
     setupModalListeners();
@@ -1016,27 +1005,9 @@ async function loadProducts(forceReload = false) {
     }
 }
 
-// Форматирование цены товара (TON | USDT)
+// Форматирование цены товара (в долларах)
 function formatPrice(product) {
-    const prices = [];
-    
-    // Добавляем цену в TON, если она указана
-    if (product.price_ton && product.price_ton > 0) {
-        prices.push(`${product.price_ton.toFixed(2)} TON`);
-    }
-    
-    // Добавляем цену в USDT, если она указана
-    if (product.price_usdt && product.price_usdt > 0) {
-        prices.push(`${product.price_usdt.toFixed(2)} USDT`);
-    }
-    
-    // Если нет цен в криптовалютах, показываем обычную цену
-    if (prices.length === 0) {
-        return `${(product.price || 0).toFixed(2)} $`;
-    }
-    
-    // Соединяем цены через " | "
-    return prices.join(' | ');
+    return `$${(product.price || 0).toFixed(2)}`;
 }
 
 // Обновление поисковых подсказок
@@ -1086,8 +1057,19 @@ function selectSuggestion(suggestion) {
 
 // Обработка изменения фильтров
 function handleFilterChange() {
-    currentFilters.category = document.getElementById('categoryFilter').value;
-    currentFilters.price = document.getElementById('priceFilter').value;
+    // Получаем значения диапазона цен
+    const priceFrom = document.getElementById('priceFrom').value;
+    const priceTo = document.getElementById('priceTo').value;
+    
+    // Формируем фильтр цены
+    if (priceFrom || priceTo) {
+        const min = priceFrom ? parseFloat(priceFrom) : 0;
+        const max = priceTo ? parseFloat(priceTo) : Infinity;
+        currentFilters.priceRange = { min, max };
+    } else {
+        currentFilters.priceRange = null;
+    }
+    
     currentFilters.sort = document.getElementById('sortFilter').value;
     currentFilters.stock = document.getElementById('stockFilter').value;
     
@@ -1108,20 +1090,11 @@ function filterProducts() {
         );
     }
     
-    // Фильтр по категории
-    if (currentFilters.category) {
-        filteredProducts = filteredProducts.filter(product => product.category === currentFilters.category);
-    }
-    
-    // Фильтр по цене
-    if (currentFilters.price) {
-        const [min, max] = currentFilters.price.split('-').map(Number);
+    // Фильтр по диапазону цен
+    if (currentFilters.priceRange) {
+        const { min, max } = currentFilters.priceRange;
         filteredProducts = filteredProducts.filter(product => {
-            if (max) {
-                return product.price >= min && product.price <= max;
-            } else {
-                return product.price >= min;
-            }
+            return product.price >= min && product.price <= max;
         });
     }
     
@@ -1129,28 +1102,18 @@ function filterProducts() {
     if (currentFilters.stock) {
         if (currentFilters.stock === 'in-stock') {
             filteredProducts = filteredProducts.filter(product => 
-                product.infinite_stock || (product.stock && product.stock > 5)
-            );
-        } else if (currentFilters.stock === 'low-stock') {
-            filteredProducts = filteredProducts.filter(product => 
-                !product.infinite_stock && product.stock && product.stock <= 5 && product.stock > 0
+                product.infinite_stock || (product.stock && product.stock > 0)
             );
         }
     }
     
     // Сортировка
     switch (currentFilters.sort) {
-        case 'popular':
-            filteredProducts.sort((a, b) => b.reviewsCount - a.reviewsCount);
-            break;
         case 'price-low':
             filteredProducts.sort((a, b) => a.price - b.price);
             break;
         case 'price-high':
             filteredProducts.sort((a, b) => b.price - a.price);
-            break;
-        case 'rating':
-            filteredProducts.sort((a, b) => b.rating - a.rating);
             break;
         default: // newest
             filteredProducts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));

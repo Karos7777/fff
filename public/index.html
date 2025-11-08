@@ -25,6 +25,14 @@
             <p data-lang="shopSubtitle"></p>
         </header>
 
+        <!-- Кнопка поддержки -->
+        <div class="support-button">
+            <a href="https://t.me/Karos1" target="_blank" class="btn-support">
+                <span class="support-icon">💬</span>
+                <span data-lang="support">Поддержка</span>
+            </a>
+        </div>
+
         <div class="user-info" id="userInfo">
             <span id="userName"></span>
             <div class="user-actions">
@@ -72,69 +80,33 @@
 
                 <div class="filters">
                     <div class="filter-group">
-                        <label class="filter-label" data-lang="filterCategory"></label>
-                        <select id="categoryFilter" class="filter-select">
-                            <option value=""></option> <option value="development" data-lang="categoryDevelopment"></option>
-                            <option value="consultation" data-lang="categoryConsultation"></option>
-                            <option value="design" data-lang="categoryDesign"></option>
-                            <option value="other" data-lang="categoryOther"></option>
-                        </select>
+                        <label class="filter-label" data-lang="filterPrice">Цена ($)</label>
+                        <div class="price-range">
+                            <input type="number" id="priceFrom" class="price-input" placeholder="От" min="0">
+                            <span class="price-separator">—</span>
+                            <input type="number" id="priceTo" class="price-input" placeholder="До" min="0">
+                        </div>
                     </div>
                 
                     <div class="filter-group">
-                        <label class="filter-label" data-lang="filterPrice"></label>
-                        <select id="priceFilter" class="filter-select">
-                            <option value=""></option> <option value="0-1000" data-lang="priceTo1000"></option>
-                            <option value="1000-5000" data-lang="price1000_5000"></option>
-                            <option value="5000-10000" data-lang="price5000_10000"></option>
-                            <option value="10000+" data-lang="priceMore10000"></option>
-                        </select>
-                    </div>
-                
-                    <div class="filter-group">
-                        <label class="filter-label" data-lang="filterSort"></label>
+                        <label class="filter-label" data-lang="filterSort">Сортировка</label>
                         <select id="sortFilter" class="filter-select">
-                            <option value="newest" data-lang="sortNewest"></option>
-                            <option value="popular" data-lang="sortPopular"></option>
-                            <option value="price-low" data-lang="sortPriceLow"></option>
-                            <option value="price-high" data-lang="sortPriceHigh"></option>
-                            <option value="rating" data-lang="sortRating"></option>
+                            <option value="newest" data-lang="sortNewest">Новые</option>
+                            <option value="price-low" data-lang="sortPriceLow">Дешевле</option>
+                            <option value="price-high" data-lang="sortPriceHigh">Дороже</option>
                         </select>
                     </div>
                 
                     <div class="filter-group">
-                        <label class="filter-label" data-lang="filterStock"></label>
+                        <label class="filter-label" data-lang="filterStock">Наличие</label>
                         <select id="stockFilter" class="filter-select">
-                            <option value="" data-lang="stockAll"></option>
-                            <option value="in-stock" data-lang="stockIn"></option>
-                            <option value="low-stock" data-lang="stockLow"></option>
+                            <option value="" data-lang="stockAll">Все</option>
+                            <option value="in-stock" data-lang="stockIn">В наличии</option>
                         </select>
                     </div>
                 </div>
             </div>
 
-            <!-- Популярные категории -->
-            <div class="popular-categories">
-                <h2 data-lang="popularCategories"></h2>
-                <div class="categories-grid">
-                    <a href="#" class="category-card" data-category="development">
-                        <span class="category-icon">💻</span>
-                        <div class="category-name" data-lang="categoryDevelopment"></div>
-                    </a>
-                    <a href="#" class="category-card" data-category="consultation">
-                        <span class="category-icon">📋</span>
-                        <div class="category-name" data-lang="categoryConsultation"></div>
-                    </a>
-                    <a href="#" class="category-card" data-category="design">
-                        <span class="category-icon">🎨</span>
-                        <div class="category-name" data-lang="categoryDesign"></div>
-                    </a>
-                    <a href="#" class="category-card" data-category="other">
-                        <span class="category-icon">🔧</span>
-                        <div class="category-name" data-lang="categoryOther"></div>
-                    </a>
-                </div>
-            </div>
 
             <!-- Товары -->
             <div class="products-grid" id="productsGrid">

@@ -215,21 +215,23 @@ class PaymentManager {
       if (window.Telegram && window.Telegram.WebApp) {
         const invoice = this.currentInvoice.telegramInvoice;
         
-        // Отправляем инвойс через бота
-        const botResponse = await fetch(`https://api.telegram.org/bot${window.BOT_TOKEN}/sendInvoice`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: window.Telegram.WebApp.initDataUnsafe.user.id,
-            ...invoice
-          })
+        // Открываем инвойс через Telegram WebApp
+        window.Telegram.WebApp.openInvoice(invoice.payload, (status) => {
+          console.log('⭐ [STARS] Статус оплаты:', status);
+          
+          if (status === 'paid') {
+            this.updateStatus('✅ Оплата успешно завершена!');
+            this.showPaymentSuccess(this.currentInvoice);
+          } else if (status === 'cancelled') {
+            this.updateStatus('❌ Оплата отменена');
+          } else if (status === 'failed') {
+            this.updateStatus('❌ Ошибка оплаты');
+          } else if (status === 'pending') {
+            this.updateStatus('⏳ Обработка платежа...');
+          }
         });
 
-        if (!botResponse.ok) {
-          throw new Error('Ошибка отправки счета');
-        }
-
-        this.updateStatus('Счет отправлен в чат. Проверьте Telegram для оплаты.');
+        this.updateStatus('🚀 Открываем форму оплаты...');
       } else {
         throw new Error('Telegram WebApp недоступен');
       }
@@ -925,37 +927,74 @@ class PaymentManager {
   async openTelegramWallet(address, amount, memo) {
     console.log('💳 [WALLET] Открытие Telegram кошелька:', { address, amount, memo });
     
-    // Сохраняем данные транзакции
-    this.pendingTransaction = { address, amount, memo };
+    const amountInNano = Math.floor(parseFloat(amount) * 1e9);
     
-    try {
-      // Пытаемся использовать TON Connect
-      if (!this.tonConnector) {
-        const tonConnectReady = await this.initTONConnect();
-        if (!tonConnectReady) {
-          throw new Error('TON Connect недоступен');
+    // Проверяем, находимся ли мы в Telegram WebApp
+    if (window.Telegram && window.Telegram.WebApp) {
+      console.log('📱 [WALLET] Работаем в Telegram WebApp');
+      
+      // Формируем ссылку для встроенного кошелька
+      const walletUrl = `https://t.me/wallet?startattach&choose=transfer&to=${address}&amount=${amountInNano}&text=${encodeURIComponent(memo || '')}`;
+      
+      try {
+        // Используем openTelegramLink для внутренних ссылок Telegram
+        window.Telegram.WebApp.openTelegramLink(walletUrl);
+        this.showToast('🚀 Открываем встроенный кошелёк...');
+        return;
+      } catch (error) {
+        console.log('⚠️ [WALLET] openTelegramLink не сработал, пробуем openLink');
+        try {
+          window.Telegram.WebApp.openLink(walletUrl);
+          this.showToast('🚀 Открываем кошелёк...');
+          return;
+        } catch (error2) {
+          console.error('❌ [WALLET] Ошибка openLink:', error2);
         }
       }
-      
-      // Получаем список доступных кошельков
-      const wallets = await this.tonConnector.getWallets();
-      const telegramWallet = wallets.find(wallet => 
-        wallet.name.toLowerCase().includes('telegram') || 
-        wallet.name.toLowerCase().includes('wallet')
-      );
-      
-      if (telegramWallet) {
-        console.log('✅ [WALLET] Найден Telegram Wallet, подключаемся...');
-        await this.tonConnector.connect(telegramWallet);
-        this.showToast('🚀 Подключение к Telegram Wallet...');
+    }
+    
+    // Fallback для браузера или если WebApp API недоступен
+    this.openWalletInBrowser(address, amountInNano, memo);
+  }
+  
+  // Открытие кошелька в браузере
+  openWalletInBrowser(address, amountInNano, memo) {
+    console.log('🌐 [WALLET] Открытие в браузере');
+    
+    // Определяем платформу
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const encodedMemo = encodeURIComponent(memo || '');
+    
+    // Формируем ссылки
+    const universalLink = `https://t.me/wallet?startattach&choose=transfer&to=${address}&amount=${amountInNano}&text=${encodedMemo}`;
+    const deepLink = `tg://resolve?domain=wallet&startattach&choose=transfer&to=${address}&amount=${amountInNano}&text=${encodedMemo}`;
+    
+    try {
+      if (isMobile) {
+        // На мобильных сначала пробуем deep link
+        window.location.href = deepLink;
+        
+        // Если через 1.5 секунды страница не скрылась, открываем универсальную ссылку
+        setTimeout(() => {
+          if (!document.hidden) {
+            window.open(universalLink, '_blank');
+          }
+        }, 1500);
       } else {
-        console.log('⚠️ [WALLET] Telegram Wallet не найден, используем универсальные ссылки');
-        this.fallbackToUniversalLinks(address, amount, memo);
+        // На десктопе сразу открываем универсальную ссылку
+        window.open(universalLink, '_blank');
       }
       
+      this.showToast('🚀 Открываем Telegram кошелёк...');
+      
+      // Показываем инструкции через 3 секунды
+      setTimeout(() => {
+        this.showWalletInstructions(address, parseFloat(amountInNano) / 1e9, memo);
+      }, 3000);
+      
     } catch (error) {
-      console.error('❌ [WALLET] Ошибка TON Connect:', error);
-      this.fallbackToUniversalLinks(address, amount, memo);
+      console.error('❌ [WALLET] Ошибка открытия:', error);
+      this.showWalletInstructions(address, parseFloat(amountInNano) / 1e9, memo);
     }
   }
 

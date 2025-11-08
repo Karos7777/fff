@@ -1681,3 +1681,88 @@ body {
   outline: none;
   border-color: var(--primary-color);
 }
+
+/* Кнопка поддержки */
+.support-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+}
+
+.btn-support {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+  color: white;
+  text-decoration: none;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+  font-size: 0.9rem;
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s ease;
+}
+
+.btn-support:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+}
+
+.support-icon {
+  font-size: 1.1rem;
+}
+
+/* Диапазон цен */
+.price-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--border-radius);
+  font-size: 0.9rem;
+  background: var(--white);
+  color: var(--gray-700);
+  transition: border-color 0.2s ease;
+}
+
+.price-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.price-separator {
+  color: var(--gray-400);
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+  .support-button {
+    top: 10px;
+    right: 10px;
+  }
+  
+  .btn-support {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+  
+  .price-range {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .price-separator {
+    display: none;
+  }
+}
