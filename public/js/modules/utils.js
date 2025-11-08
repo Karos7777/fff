@@ -124,13 +124,47 @@ const Utils = {
             const userNameEl = document.getElementById('userName');
             const userAvatarEl = document.getElementById('userAvatar');
             
+            // Приоритет: username > first_name > 'Пользователь'
+            const displayName = window.currentUser.username || window.currentUser.first_name || 'Пользователь';
+            
             if (userNameEl) {
-                userNameEl.textContent = window.currentUser.first_name || window.currentUser.username || 'Пользователь';
+                userNameEl.textContent = displayName;
             }
             
-            if (userAvatarEl && window.currentUser.first_name) {
-                userAvatarEl.textContent = window.currentUser.first_name.charAt(0).toUpperCase();
+            if (userAvatarEl) {
+                // Для аватара используем первую букву отображаемого имени
+                userAvatarEl.textContent = displayName.charAt(0).toUpperCase();
             }
+            
+            // Показываем кнопку "Мои заказы" для авторизованных пользователей
+            const myOrdersBtn = document.getElementById('myOrdersBtn');
+            if (myOrdersBtn) {
+                myOrdersBtn.style.display = 'inline-flex';
+            }
+            
+            // Показываем админ-панель для администраторов
+            if (window.currentUser.is_admin) {
+                this.showAdminControls();
+            }
+        }
+    },
+    
+    // Показать элементы управления для администратора
+    showAdminControls() {
+        // Создаем кнопку админ-панели если её нет
+        const userActions = document.querySelector('.user-actions');
+        if (userActions && !document.getElementById('adminPanelBtn')) {
+            const adminBtn = document.createElement('button');
+            adminBtn.id = 'adminPanelBtn';
+            adminBtn.className = 'btn-admin';
+            adminBtn.innerHTML = '<span class="icon">⚙️</span><span>Админ-панель</span>';
+            adminBtn.addEventListener('click', () => {
+                window.open('/admin-panel.html', '_blank');
+            });
+            
+            // Вставляем перед кнопкой выхода
+            const logoutBtn = document.getElementById('logoutBtn');
+            userActions.insertBefore(adminBtn, logoutBtn);
         }
     },
 

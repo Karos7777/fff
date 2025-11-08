@@ -625,6 +625,32 @@ body {
   transform: translateY(-1px);
 }
 
+.btn-admin {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: var(--white);
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--border-radius);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+}
+
+.btn-admin:hover {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-admin .icon {
+  font-size: 14px;
+}
+
 .btn-success {
   background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
   color: var(--white);

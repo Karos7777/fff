@@ -56,6 +56,14 @@ const Interface = {
             logoutBtn.addEventListener('click', () => Auth.handleLogout());
         }
 
+        // Кнопка "Мои заказы"
+        const myOrdersBtn = document.getElementById('myOrdersBtn');
+        if (myOrdersBtn) {
+            myOrdersBtn.addEventListener('click', () => {
+                window.open('/orders.html', '_blank');
+            });
+        }
+
         // Поиск товаров
         const searchInput = document.getElementById('searchInput');
         if (searchInput) {
