@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
 
 // Middleware для аутентификации
 const authMiddleware = (req, res, next) => {
@@ -31,7 +31,11 @@ const authMiddlewareWithDB = async (req, res, next) => {
   }
   
   try {
+    console.log('🔍 [AUTH] Проверка токена, JWT_SECRET length:', JWT_SECRET.length);
+    console.log('🔍 [AUTH] Token preview:', token.substring(0, 50) + '...');
+    
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('✅ [AUTH] Токен декодирован:', decoded);
     
     // Получаем полную информацию о пользователе из базы данных
     const userResult = await db.query(
@@ -40,13 +44,16 @@ const authMiddlewareWithDB = async (req, res, next) => {
     );
     
     if (userResult.rows.length === 0) {
+      console.log('❌ [AUTH] Пользователь не найден в БД:', decoded.telegram_id);
       return res.status(401).json({ error: 'Пользователь не найден' });
     }
     
     req.user = userResult.rows[0];
+    console.log('✅ [AUTH] Пользователь найден:', req.user.username);
     next();
   } catch (error) {
     console.error('❌ [AUTH] Ошибка аутентификации:', error);
+    console.error('❌ [AUTH] Token that failed:', token.substring(0, 100) + '...');
     return res.status(401).json({ error: 'Недействительный токен' });
   }
 };
@@ -54,6 +61,7 @@ const authMiddlewareWithDB = async (req, res, next) => {
 // Универсальная функция генерации токена с role и is_admin
 const generateToken = (user) => {
   console.log('[GENERATE TOKEN] Input user object:', user);
+  console.log('[GENERATE TOKEN] JWT_SECRET length:', JWT_SECRET.length);
   
   // КРИТИЧНО: Проверяем что user.id существует
   if (!user.id && !user.telegram_id) {
@@ -65,6 +73,7 @@ const generateToken = (user) => {
     id: user.id,
     telegram_id: user.telegram_id,
     username: user.username,
+    first_name: user.first_name,
     role: user.is_admin ? 'admin' : 'user', // Стандартизируем поле role
     is_admin: user.is_admin,
     iat: Math.floor(Date.now() / 1000)
@@ -72,7 +81,10 @@ const generateToken = (user) => {
   
   console.log('[GENERATE TOKEN] Payload:', payload);
   
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+  console.log('[GENERATE TOKEN] Token created, length:', token.length);
+  
+  return token;
 };
 
 module.exports = {

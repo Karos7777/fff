@@ -73,12 +73,43 @@ router.post('/telegram', async (req, res) => {
             
             console.log('✅ [AUTH] Создан новый пользователь:', user);
         } else {
-            // Обновляем is_admin если изменился
+            // Обновляем данные пользователя из Telegram
+            let needsUpdate = false;
+            const updates = {};
+            
+            if (user.username !== (username || '')) {
+                updates.username = username || '';
+                needsUpdate = true;
+            }
+            
+            if (user.first_name !== (first_name || '')) {
+                updates.first_name = first_name || '';
+                needsUpdate = true;
+            }
+            
+            if (user.last_name !== (last_name || '')) {
+                updates.last_name = last_name || '';
+                needsUpdate = true;
+            }
+            
             if (user.is_admin !== isAdmin) {
-                const updateUser = dbLegacy.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
-                await updateUser.run(isAdmin, user.id);
-                user.is_admin = isAdmin;
-                console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
+                updates.is_admin = isAdmin;
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
+                const updateFields = Object.keys(updates).map((key, index) => `${key} = $${index + 1}`).join(', ');
+                const updateValues = Object.values(updates);
+                updateValues.push(user.id);
+                
+                const updateQuery = `UPDATE users SET ${updateFields} WHERE id = $${updateValues.length}`;
+                const updateUser = dbLegacy.prepare(updateQuery);
+                await updateUser.run(...updateValues);
+                
+                // Обновляем объект user
+                Object.assign(user, updates);
+                
+                console.log('✅ [AUTH] Обновлены данные пользователя:', updates);
             }
         }
         
