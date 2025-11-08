@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.8.0';
+const APP_VERSION = '2.9.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -1006,8 +1006,31 @@ async function loadProducts(forceReload = false) {
     }
 }
 
-// Форматирование цены товара (в долларах)
+// Форматирование цены товара (в криптовалютах)
 function formatPrice(product) {
+    const prices = [];
+    
+    // Добавляем цену в TON если указана
+    if (product.price_ton && product.price_ton > 0) {
+        prices.push(`${product.price_ton.toFixed(2)} TON`);
+    }
+    
+    // Добавляем цену в USDT если указана
+    if (product.price_usdt && product.price_usdt > 0) {
+        prices.push(`${product.price_usdt.toFixed(2)} USDT`);
+    }
+    
+    // Добавляем цену в Stars если указана
+    if (product.price_stars && product.price_stars > 0) {
+        prices.push(`${product.price_stars} Stars`);
+    }
+    
+    // Если есть криптоцены, показываем их
+    if (prices.length > 0) {
+        return prices.join(' | ');
+    }
+    
+    // Fallback - показываем обычную цену в долларах
     return `$${(product.price || 0).toFixed(2)}`;
 }
 
@@ -1311,6 +1334,115 @@ function shareProduct(productId) {
     }
 }
 
+// Функции оплаты разными способами
+async function payWithStars(productId) {
+    try {
+        showLoading();
+        
+        const user = window.Telegram?.WebApp?.initDataUnsafe?.user;
+        if (!user) {
+            throw new Error('Данные пользователя недоступны');
+        }
+        
+        // Получаем информацию о товаре
+        const product = window.products?.find(p => p.id === productId);
+        if (!product || !product.price_stars) {
+            throw new Error('Товар не найден или цена в Stars не указана');
+        }
+        
+        // Сначала создаем заказ
+        const orderResponse = await fetch('/api/orders', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                productId: productId,
+                paymentMethod: 'stars'
+            })
+        });
+        
+        if (!orderResponse.ok) {
+            const error = await orderResponse.json();
+            throw new Error(error.error || 'Ошибка создания заказа');
+        }
+        
+        const orderData = await orderResponse.json();
+        
+        // Теперь создаем инвойс для Stars
+        const invoiceResponse = await fetch('/api/payments/stars/create-invoice', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                orderId: orderData.orderId,
+                productId: productId,
+                amount: product.price_stars,
+                description: `Покупка: ${product.name}`
+            })
+        });
+        
+        if (!invoiceResponse.ok) {
+            const error = await invoiceResponse.json();
+            throw new Error(error.error || 'Ошибка создания инвойса');
+        }
+        
+        const invoiceData = await invoiceResponse.json();
+        
+        // Открываем инвойс через Telegram WebApp API
+        window.Telegram.WebApp.openInvoice(invoiceData.invoiceUrl, (status) => {
+            console.log('⭐ [STARS] Статус оплаты:', status);
+            
+            if (status === 'paid') {
+                showSuccess('Оплата успешно завершена!');
+                // Закрываем модальное окно товара
+                document.getElementById('productModal').style.display = 'none';
+            } else if (status === 'cancelled') {
+                showError('Оплата отменена');
+            } else if (status === 'failed') {
+                showError('Ошибка оплаты');
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка оплаты Stars:', error);
+        showError('Ошибка оплаты: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function payWithTON(productId) {
+    try {
+        // Закрываем модальное окно товара
+        document.getElementById('productModal').style.display = 'none';
+        
+        // Открываем модальное окно оплаты с выбором TON
+        orderProduct(productId, 'ton');
+        
+    } catch (error) {
+        console.error('Ошибка оплаты TON:', error);
+        showError('Ошибка оплаты TON');
+    }
+}
+
+async function payWithUSDT(productId) {
+    try {
+        // Закрываем модальное окно товара
+        document.getElementById('productModal').style.display = 'none';
+        
+        // Открываем модальное окно оплаты с выбором USDT
+        orderProduct(productId, 'usdt');
+        
+    } catch (error) {
+        console.error('Ошибка оплаты USDT:', error);
+        showError('Ошибка оплаты USDT');
+    }
+}
+
 // Получение названия категории
 function getCategoryName(category) {
     const categories = {
@@ -1381,15 +1513,40 @@ async function viewProduct(productId) {
                     <span>${stockDisplay}</span>
                 </div>
                 
-                <!-- Кнопки действий -->
+                <!-- Кнопки оплаты -->
+                ${isAvailable ? `
+                <div class="payment-options">
+                    <h4>Способы оплаты:</h4>
+                    <div class="payment-buttons">
+                        ${product.price_ton && product.price_ton > 0 ? `
+                            <button class="btn-payment btn-ton" onclick="payWithTON(${product.id})">
+                                💎 ${product.price_ton.toFixed(2)} TON
+                            </button>
+                        ` : ''}
+                        ${product.price_usdt && product.price_usdt > 0 ? `
+                            <button class="btn-payment btn-usdt" onclick="payWithUSDT(${product.id})">
+                                💵 ${product.price_usdt.toFixed(2)} USDT
+                            </button>
+                        ` : ''}
+                        ${product.price_stars && product.price_stars > 0 ? `
+                            <button class="btn-payment btn-stars" onclick="payWithStars(${product.id})">
+                                ⭐ ${product.price_stars} Stars
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+                ` : `
+                <div class="out-of-stock-message">
+                    <span>${translations[currentLang].outOfStock}</span>
+                </div>
+                `}
+                
+                <!-- Дополнительные действия -->
                 <div class="product-actions">
                     <button class="btn-secondary" onclick="toggleFavorite(${product.id})">
                         ${favorites.includes(product.id) ? '❤️ В избранном' : '🤍 В избранное'}
                     </button>
                     <button class="btn-secondary" onclick="shareProduct(${product.id})">📤 Поделиться</button>
-                    <button class="btn-success" onclick="orderProduct(${product.id})" ${!isAvailable ? 'disabled' : ''}>
-                        ${!isAvailable ? translations[currentLang].outOfStock : translations[currentLang].order}
-                    </button>
                 </div>
             </div>
         `;
