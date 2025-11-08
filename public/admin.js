@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
       category: formData.get('category') || 'other',
       image_url: formData.get('image_url') || null,
       file_path: formData.get('file_path') || null,
-      stock_quantity: infinite ? 999999 : (parseInt(formData.get('stock_quantity')) || 0),
+      stock: infinite ? 999999 : (parseInt(formData.get('stock')) || 0),
       infinite_stock: infinite,
       is_active: active
     };

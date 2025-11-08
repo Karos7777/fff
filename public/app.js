@@ -725,7 +725,7 @@ function setupEventListeners() {
                     category: formData.get('category') || 'other',
                     image_url: formData.get('image_url') || null,
                     file_path: formData.get('file_path') || null,
-                    stock_quantity: parseInt(formData.get('stock_quantity')) || 999
+                    stock: parseInt(formData.get('stock')) || 999
                 };
                 
                 console.log('📦 [CREATE] Отправка данных товара:', productData);

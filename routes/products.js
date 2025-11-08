@@ -86,7 +86,7 @@ router.post('/', authMiddlewareWithDB, async (req, res) => {
       category, 
       image_url, 
       file_path, 
-      stock_quantity 
+      stock 
     } = req.body;
     
     console.log('📦 [CREATE-PRODUCT] Создание товара:', name);
@@ -94,12 +94,12 @@ router.post('/', authMiddlewareWithDB, async (req, res) => {
     const result = await db.query(`
       INSERT INTO products (
         name, description, price, price_ton, price_usdt, price_stars, 
-        category, image_url, file_path, stock_quantity, created_at
+        category, image_url, file_path, stock, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       RETURNING *
     `, [
       name, description, price, price_ton, price_usdt, price_stars,
-      category, image_url, file_path, stock_quantity
+      category, image_url, file_path, stock
     ]);
     
     console.log('✅ [CREATE-PRODUCT] Товар создан:', result.rows[0].id);
