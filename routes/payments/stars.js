@@ -52,47 +52,76 @@ router.get('/status/:paymentId', async (req, res) => {
 // Упрощенный эндпоинт для создания Stars инвойса
 router.post('/create-invoice', authMiddlewareWithDB, async (req, res) => {
     try {
-        const { orderId, productId } = req.body;
+        console.log('💎 [STARS INVOICE] Создание инвойса:', req.body);
+        
+        const { order_id, orderId, productId, product_id } = req.body;
         const userId = req.user.id;
         const BOT_TOKEN = process.env.BOT_TOKEN;
         
-        console.log('⭐ [CREATE-STARS] Создание Stars инвойса:', { userId, orderId, productId });
+        // Поддерживаем разные форматы параметров
+        const finalOrderId = order_id || orderId;
+        const finalProductId = product_id || productId;
         
-        if (!orderId || !productId) {
+        console.log('⭐ [CREATE-STARS] Создание Stars инвойса:', { 
+            userId, 
+            orderId: finalOrderId, 
+            productId: finalProductId 
+        });
+        
+        if (!finalOrderId) {
             return res.status(400).json({ 
                 success: false,
-                error: 'Необходимы orderId и productId' 
+                error: 'Order ID is required' 
             });
         }
         
-        // Получаем информацию о товаре
-        const productResult = await db.query(
-            'SELECT name, price_stars, description FROM products WHERE id = $1',
-            [productId]
+        if (!BOT_TOKEN) {
+            return res.status(500).json({ 
+                success: false,
+                error: 'Bot token not configured' 
+            });
+        }
+        
+        // Получаем информацию о заказе и товаре
+        const orderResult = await db.query(
+            `SELECT o.*, p.name, p.price_stars, p.description 
+             FROM orders o 
+             JOIN products p ON o.product_id = p.id 
+             WHERE o.id = $1 AND o.user_id = $2`,
+            [finalOrderId, userId]
         );
         
-        if (productResult.rows.length === 0) {
+        if (orderResult.rows.length === 0) {
             return res.status(404).json({ 
                 success: false,
-                error: 'Товар не найден' 
+                error: 'Order not found or access denied' 
             });
         }
         
-        const product = productResult.rows[0];
-        const starsAmount = product.price_stars || 100; // По умолчанию 100 Stars
+        const order = orderResult.rows[0];
+        
+        // Проверяем цену Stars
+        if (!order.price_stars || order.price_stars <= 0) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Product price in Stars not set' 
+            });
+        }
+        
+        const starsAmount = order.price_stars;
         
         console.log('💰 [CREATE-STARS] Цена товара:', starsAmount, 'Stars');
         
         // Создаем payload для отслеживания
-        const payload = `stars_order_${orderId}`;
+        const payload = `stars_order_${finalOrderId}`;
         
         // Создаем инвойс через Telegram Bot API
         const invoiceResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                title: product.name,
-                description: product.description || `Оплата товара: ${product.name}`,
+                title: order.name,
+                description: order.description || `Оплата товара: ${order.name}`,
                 payload: payload,
                 provider_token: '', // Пусто для Stars!
                 currency: 'XTR', // Telegram Stars
@@ -110,13 +139,13 @@ router.post('/create-invoice', authMiddlewareWithDB, async (req, res) => {
             // Сохраняем информацию об инвойсе в базу данных
             await db.query(
                 'UPDATE orders SET telegram_invoice_data = $1, payload = $2 WHERE id = $3',
-                [JSON.stringify(invoiceData.result), payload, orderId]
+                [JSON.stringify(invoiceData.result), payload, finalOrderId]
             );
             
             res.json({
                 success: true,
                 invoice_link: invoiceData.result,
-                order_id: orderId,
+                order_id: finalOrderId,
                 payload: payload
             });
         } else {

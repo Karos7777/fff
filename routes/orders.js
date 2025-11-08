@@ -6,37 +6,62 @@ module.exports = (authMiddleware) => {
   // Создание заказа
   router.post('/', authMiddleware, async (req, res) => {
     try {
-      const { product_id } = req.body;
+      console.log('📦 [ORDER CREATE] Данные заказа:', req.body);
+      
+      const { product_id, quantity = 1, payment_method } = req.body;
       const user_id = req.user.id;
       
-      console.log('[ORDER] Создание заказа:', { user_id, product_id });
-      
-      // Получаем информацию о товаре
-      const productResult = await db.query('SELECT * FROM products WHERE id = $1', [product_id]);
-      const product = productResult.rows[0];
-      
-      if (!product) {
-        return res.status(404).json({ error: 'Товар не найден' });
+      // ВАЛИДАЦИЯ ДАННЫХ
+      if (!product_id) {
+        return res.status(400).json({ error: 'Product ID is required' });
       }
       
-      // Создаём заказ
-      const insertResult = await db.query(
-        'INSERT INTO orders (user_id, product_id, status) VALUES ($1, $2, $3) RETURNING id',
-        [user_id, product_id, 'pending']
+      if (!user_id) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+      
+      console.log('[ORDER] Создание заказа:', { user_id, product_id, quantity, payment_method });
+      
+      // Проверяем существование товара
+      const productResult = await db.query(
+        'SELECT * FROM products WHERE id = $1 AND is_active = true',
+        [product_id]
       );
-      const orderId = insertResult.rows[0].id;
       
-      console.log('[ORDER] Заказ создан:', orderId);
+      if (productResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Product not found or inactive' });
+      }
       
-      // Проверяем payment_method
-      const paymentMethod = req.body.payment_method || req.body.paymentMethod;
-      console.log('[ORDER] Payment method:', paymentMethod);
+      const product = productResult.rows[0];
       
-      if (paymentMethod === 'ton' || paymentMethod === 'TON') {
+      // Определяем сумму заказа в зависимости от способа оплаты
+      let amount = 0;
+      if (payment_method === 'ton' || payment_method === 'TON') {
+        amount = product.price_ton || product.price || 0;
+      } else if (payment_method === 'usdt' || payment_method === 'USDT') {
+        amount = product.price_usdt || product.price || 0;
+      } else if (payment_method === 'stars') {
+        amount = product.price_stars || 100;
+      } else {
+        amount = product.price || 0;
+      }
+      
+      // Создаём заказ с полными данными
+      const insertResult = await db.query(
+        `INSERT INTO orders (user_id, product_id, quantity, total_amount, status, payment_method, created_at) 
+         VALUES ($1, $2, $3, $4, 'pending', $5, NOW()) RETURNING *`,
+        [user_id, product_id, quantity, amount, payment_method || 'ton']
+      );
+      const order = insertResult.rows[0];
+      
+      console.log('✅ [ORDER CREATE] Заказ создан:', order.id);
+      
+      // Обрабатываем создание инвойса в зависимости от способа оплаты
+      if (payment_method === 'ton' || payment_method === 'TON') {
         // Создаём TON инвойс
         const paymentService = req.app.get('paymentService');
         const invoice = await paymentService.createCryptoInvoice(
-          orderId,
+          order.id,
           user_id,
           product_id,
           product.price_ton || product.price,
@@ -47,7 +72,7 @@ module.exports = (authMiddleware) => {
         
         return res.json({
           success: true,
-          orderId: orderId,
+          orderId: order.id,
           invoice: invoice,
           url: invoice.url,
           qr: invoice.qr,
@@ -56,11 +81,20 @@ module.exports = (authMiddleware) => {
         });
       }
       
-      res.json({ id: orderId, message: 'Заказ создан успешно' });
+      // Для других способов оплаты просто возвращаем заказ
+      res.json({ 
+        success: true,
+        order: order,
+        id: order.id, 
+        message: 'Заказ создан успешно' 
+      });
       
     } catch (error) {
-      console.error('[ORDER] Ошибка создания:', error);
-      res.status(500).json({ error: 'Ошибка сервера' });
+      console.error('❌ [ORDER CREATE] Ошибка:', error);
+      res.status(500).json({ 
+        error: 'Ошибка создания заказа',
+        details: error.message 
+      });
     }
   });
   

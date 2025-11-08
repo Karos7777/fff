@@ -23,9 +23,25 @@ const reviewsRoutes = require('./routes/reviews');
 const telegramWebhooks = require('./routes/telegram/webhooks');
 const starsPayments = require('./routes/payments/stars');
 
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
+
+// Проверка обязательных переменных окружения
+console.log('🔍 Проверка переменных окружения...');
+
+const requiredEnvVars = ['BOT_TOKEN', 'DATABASE_URL', 'JWT_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+    console.error('❌ Отсутствуют обязательные переменные окружения:', missingEnvVars);
+    console.error('💡 Убедитесь, что следующие переменные установлены:');
+    missingEnvVars.forEach(envVar => {
+        console.error(`   - ${envVar}`);
+    });
+    process.exit(1);
+}
 
 console.log('🔍 JWT_SECRET загружен:', !!process.env.JWT_SECRET);
 console.log('🔑 JWT_SECRET:', process.env.JWT_SECRET ? process.env.JWT_SECRET.substring(0, 20) + '...' : 'НЕ УСТАНОВЛЕН');
@@ -39,11 +55,12 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     }
 }
 
-// Защита от ошибок: если токен не задан — предупреждение
-if (!BOT_TOKEN) {
-    console.warn('⚠️  ПРЕДУПРЕЖДЕНИЕ: Переменная BOT_TOKEN не задана!');
-    console.warn('Для продакшена убедитесь, что вы добавили её в Environment Variables.');
+// Проверка опциональных переменных для платежей
+if (!process.env.STARS_PROVIDER_TOKEN) {
+    console.warn('⚠️ STARS_PROVIDER_TOKEN не настроен, оплата Stars может быть ограничена');
 }
+
+console.log('✅ Все обязательные переменные окружения настроены');
 
 // Middleware для CORS
 app.use(cors({

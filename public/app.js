@@ -1780,7 +1780,40 @@ function hideLoading() {
 }
 
 function showError(message) {
-  alert('Ошибка: ' + message);
+    console.error('🚨 [ERROR] Показываем ошибку:', message);
+    
+    // Создаем красивое модальное окно ошибки
+    const errorHtml = `
+        <div class="error-overlay" onclick="this.remove()">
+            <div class="error-modal" onclick="event.stopPropagation()">
+                <div class="error-header">
+                    <h3>❌ Ошибка</h3>
+                </div>
+                <div class="error-content">
+                    <p>${message}</p>
+                </div>
+                <div class="error-actions">
+                    <button class="error-close-btn" onclick="this.closest('.error-overlay').remove()">
+                        ЗАКРЫТЬ
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Удаляем предыдущие ошибки
+    document.querySelectorAll('.error-overlay').forEach(el => el.remove());
+    
+    // Добавляем новую ошибку
+    document.body.insertAdjacentHTML('beforeend', errorHtml);
+    
+    // Автоматически закрываем через 10 секунд
+    setTimeout(() => {
+        const errorOverlay = document.querySelector('.error-overlay');
+        if (errorOverlay) {
+            errorOverlay.remove();
+        }
+    }, 10000);
 }
 
 function showSuccess(message) {

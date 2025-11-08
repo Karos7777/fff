@@ -1927,3 +1927,117 @@ body {
     display: none;
   }
 }
+
+/* Стили для модального окна ошибки */
+.error-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.error-modal {
+    background: white;
+    border-radius: 12px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    animation: slideIn 0.3s ease-out;
+}
+
+.error-header {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    padding: 16px 20px;
+    text-align: center;
+}
+
+.error-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.error-content {
+    padding: 20px;
+    text-align: center;
+}
+
+.error-content p {
+    margin: 0;
+    color: #333;
+    line-height: 1.5;
+    font-size: 1rem;
+}
+
+.error-actions {
+    padding: 0 20px 20px;
+    text-align: center;
+}
+
+.error-close-btn {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    min-width: 120px;
+}
+
+.error-close-btn:hover {
+    background: #c0392b;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+
+.error-close-btn:active {
+    transform: translateY(0);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { 
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 480px) {
+    .error-modal {
+        width: 95%;
+        margin: 20px;
+    }
+    
+    .error-header {
+        padding: 12px 16px;
+    }
+    
+    .error-content {
+        padding: 16px;
+    }
+    
+    .error-actions {
+        padding: 0 16px 16px;
+    }
+}
