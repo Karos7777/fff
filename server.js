@@ -10,7 +10,7 @@ const cron = require('node-cron');
 // Импорт модулей
 const db = require('./db');
 const PostgresAdapter = require('./db-postgres');
-const { authMiddleware } = require('./middleware');
+const { authMiddleware, authMiddlewareWithDB, generateToken } = require('./middleware/auth');
 const PaymentService = require('./payment-service');
 const tonPolling = require('./services/tonPolling');
 
@@ -77,8 +77,7 @@ const upload = multer({ storage });
 // Инициализация базы данных PostgreSQL
 const dbLegacy = new PostgresAdapter(process.env.DATABASE_URL);
 
-// Создаём экземпляр authMiddleware с доступом к db
-const authMiddlewareWithDB = authMiddleware(dbLegacy);
+// authMiddlewareWithDB уже импортирован из модуля
 
 // Функция для создания таблиц PostgreSQL
 async function initDB() {
@@ -251,12 +250,18 @@ initDB()
             
         } catch (error) {
             console.error('❌ Ошибка инициализации сервиса платежей:', error);
-            throw error;
+            // Не останавливаем сервер, продолжаем работу без платежей
         }
     })
     .catch(err => {
-        console.error('❌ Критическая ошибка при инициализации:', err);
-        process.exit(1);
+        console.error('❌ Ошибка при инициализации БД:', err);
+        console.log('⚠️ Сервер запускается без подключения к БД (режим разработки)');
+        
+        // Создаем mock paymentService для разработки
+        app.set('paymentService', {
+            createStarsInvoice: () => Promise.reject(new Error('БД недоступна')),
+            checkCryptoPayments: () => Promise.reject(new Error('БД недоступна'))
+        });
     });
 
 // === ПОДКЛЮЧЕНИЕ МОДУЛЬНЫХ РОУТОВ ===

@@ -364,8 +364,5 @@ const Interface = {
 };
 
 // Экспорт для использования в других модулях
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Interface;
-} else {
-    window.Interface = Interface;
-}
+window.Interface = Interface;
+console.log('✅ Interface модуль загружен');

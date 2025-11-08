@@ -267,8 +267,5 @@ const Utils = {
 };
 
 // Экспорт для использования в других модулях
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Utils;
-} else {
-    window.Utils = Utils;
-}
+window.Utils = Utils;
+console.log('✅ Utils модуль загружен');

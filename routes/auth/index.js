@@ -1,5 +1,5 @@
 const express = require('express');
-const { generateToken } = require('../../middleware');
+const { generateToken } = require('../../middleware/auth');
 const db = require('../../db');
 const PostgresAdapter = require('../../db-postgres');
 

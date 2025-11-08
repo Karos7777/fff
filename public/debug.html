@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug - Магазин</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Магазин (Debug Mode)</h1>
+        </header>
+
+        <div class="debug-info">
+            <h3>Статус загрузки модулей:</h3>
+            <div id="moduleStatus"></div>
+        </div>
+
+        <div class="user-info" id="userInfo" style="display: none;">
+            <span id="userName">Пользователь</span>
+            <button id="logoutBtn" class="btn-secondary">Выход</button>
+        </div>
+
+        <div class="auth-section" id="authSection">
+            <div class="auth-card">
+                <h2>Авторизация</h2>
+                <p>Войдите через Telegram для доступа к магазину</p>
+                <button id="authBtn" class="btn-primary">Войти через Telegram</button>
+            </div>
+        </div>
+
+        <main class="main-content" id="mainContent" style="display: none;">
+            <div class="products-section">
+                <h2>Товары</h2>
+                <div id="productsGrid" class="products-grid">
+                    <p>Загрузка товаров...</p>
+                </div>
+            </div>
+        </main>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+    </div>
+
+    <script>
+        const moduleStatus = document.getElementById('moduleStatus');
+        
+        function logStatus(message) {
+            console.log(message);
+            moduleStatus.innerHTML += '<p>' + message + '</p>';
+        }
+        
+        logStatus('🚀 Начало загрузки...');
+        
+        // Простые функции для тестирования
+        function showAuthSection() {
+            document.getElementById('authSection').style.display = 'flex';
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('userInfo').style.display = 'none';
+        }
+        
+        function showMainContent() {
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('userInfo').style.display = 'flex';
+        }
+        
+        function showLoading() {
+            document.getElementById('loading').style.display = 'flex';
+        }
+        
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        // Простая авторизация для тестирования
+        async function testAuth() {
+            try {
+                showLoading();
+                logStatus('🔐 Попытка авторизации...');
+                
+                // Тестовые данные
+                const testUser = {
+                    telegram_id: 123456789,
+                    username: 'testuser',
+                    first_name: 'Test',
+                    last_name: 'User'
+                };
+                
+                const response = await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testUser)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logStatus('✅ Авторизация успешна!');
+                    localStorage.setItem('authToken', data.token);
+                    showMainContent();
+                    await loadProducts();
+                } else {
+                    const error = await response.text();
+                    logStatus('❌ Ошибка авторизации: ' + error);
+                }
+            } catch (error) {
+                logStatus('❌ Ошибка: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Простая загрузка товаров
+        async function loadProducts() {
+            try {
+                logStatus('📦 Загрузка товаров...');
+                
+                const response = await fetch('/api/products');
+                
+                if (response.ok) {
+                    const products = await response.json();
+                    logStatus('✅ Загружено товаров: ' + products.length);
+                    
+                    const grid = document.getElementById('productsGrid');
+                    if (products.length === 0) {
+                        grid.innerHTML = '<p>Товары не найдены</p>';
+                    } else {
+                        grid.innerHTML = products.map(product => `
+                            <div class="product-card">
+                                <h3>${product.name}</h3>
+                                <p>${product.description || ''}</p>
+                                <div class="product-price">${product.price} $</div>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    const error = await response.text();
+                    logStatus('❌ Ошибка загрузки товаров: ' + error);
+                }
+            } catch (error) {
+                logStatus('❌ Ошибка: ' + error.message);
+            }
+        }
+        
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            logStatus('📱 DOM загружен');
+            
+            // Проверяем Telegram WebApp
+            if (window.Telegram?.WebApp) {
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+                logStatus('✅ Telegram WebApp инициализирован');
+            } else {
+                logStatus('⚠️ Telegram WebApp недоступен');
+            }
+            
+            // Обработчики событий
+            document.getElementById('authBtn').addEventListener('click', testAuth);
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+                localStorage.removeItem('authToken');
+                showAuthSection();
+                logStatus('🚪 Выход выполнен');
+            });
+            
+            // Проверяем сохраненный токен
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                logStatus('🔑 Найден сохраненный токен');
+                showMainContent();
+                loadProducts();
+            } else {
+                logStatus('🔐 Токен не найден, показываем авторизацию');
+                showAuthSection();
+            }
+            
+            logStatus('✅ Инициализация завершена');
+        });
+    </script>
+</body>
+</html>

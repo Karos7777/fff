@@ -385,8 +385,5 @@ const Products = {
 };
 
 // Экспорт для использования в других модулях
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Products;
-} else {
-    window.Products = Products;
-}
+window.Products = Products;
+console.log('✅ Products модуль загружен');

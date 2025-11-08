@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Магазин (Debug)</title>
+    <title>Магазин</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="payment.css">
     <link rel="stylesheet" href="orders.css">
@@ -12,11 +12,6 @@
 </head>
 <body>
     <div class="container">
-        <!-- Debug информация -->
-        <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; font-size: 12px;">
-            <strong>Debug Mode</strong> - Проверьте консоль браузера для отладочной информации
-        </div>
-
         <!-- Кнопка смены языка (компактная, слева) -->
         <div class="lang-switcher-compact">
             <select id="langSelect" class="lang-select-compact">
@@ -160,38 +155,17 @@
         </div>
     </div>
 
-    <!-- Подключение модулей в правильном порядке -->
-    <script>console.log('🔄 Начало загрузки модулей...');</script>
-    
+    <!-- Подключение модулей -->
     <script src="js/modules/config.js"></script>
-    <script>console.log('1/5 CONFIG загружен:', typeof CONFIG !== 'undefined');</script>
-    
     <script src="js/modules/utils.js"></script>
-    <script>console.log('2/5 Utils загружен:', typeof Utils !== 'undefined');</script>
-    
     <script src="js/modules/auth.js"></script>
-    <script>console.log('3/5 Auth загружен:', typeof Auth !== 'undefined');</script>
-    
     <script src="js/modules/products.js"></script>
-    <script>console.log('4/5 Products загружен:', typeof Products !== 'undefined');</script>
-    
     <script src="js/modules/interface.js"></script>
-    <script>console.log('5/5 Interface загружен:', typeof Interface !== 'undefined');</script>
     
     <!-- Главный файл приложения -->
-    <script src="app_debug.js"></script>
+    <script src="app.js"></script>
     
     <!-- Подключение дополнительных модулей для совместимости -->
     <script src="orders-manager.js"></script>
-    
-    <script>
-        console.log('✅ Все скрипты подключены');
-        console.log('📊 Статус модулей:');
-        console.log('  CONFIG:', typeof CONFIG !== 'undefined');
-        console.log('  Utils:', typeof Utils !== 'undefined');
-        console.log('  Auth:', typeof Auth !== 'undefined');
-        console.log('  Products:', typeof Products !== 'undefined');
-        console.log('  Interface:', typeof Interface !== 'undefined');
-    </script>
 </body>
 </html>

@@ -49,8 +49,5 @@ const CONFIG = {
 };
 
 // Экспорт для использования в других модулях
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = CONFIG;
-} else {
-    window.CONFIG = CONFIG;
-}
+window.CONFIG = CONFIG;
+console.log('✅ CONFIG модуль загружен:', CONFIG.APP_VERSION);

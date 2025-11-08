@@ -227,8 +227,5 @@ const Auth = {
 };
 
 // Экспорт для использования в других модулях
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Auth;
-} else {
-    window.Auth = Auth;
-}
+window.Auth = Auth;
+console.log('✅ Auth модуль загружен');
