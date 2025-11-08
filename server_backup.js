@@ -1,0 +1,1831 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const db = require('./db'); // ← Новый универсальный адаптер
+const PostgresAdapter = require('./db-postgres'); // ← Оставляем для совместимости со старым кодом
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { adminMiddleware, authMiddleware, generateToken } = require('./middleware');
+const PaymentService = require('./payment-service');
+const cron = require('node-cron');
+const ordersRoutes = require('./routes/orders');
+const tonRoutes = require('./routes/ton');
+const tonPolling = require('./services/tonPolling');
+
+const app = express();
+const PORT = process.env.PORT || 10000;
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+
+console.log('🔍 JWT_SECRET загружен:', JWT_SECRET ? 'да' : 'нет');
+console.log('🔑 JWT_SECRET:', JWT_SECRET.substring(0, 20) + '...');
+
+// Защита от ошибок: если токен не задан — предупреждение (но сервер запустится для разработки)
+if (!BOT_TOKEN) {
+  console.warn('⚠️  ПРЕДУПРЕЖДЕНИЕ: Переменная BOT_TOKEN не задана!');
+  console.warn('Для продакшена убедитесь, что вы добавили её в Environment Variables.');
+}
+
+// Список ID администраторов из Telegram
+const ADMIN_TELEGRAM_IDS = [
+    '853232715', // Замените на ваш реальный ID
+    // Можете добавить еще админов
+];
+
+// Middleware для CORS
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
+
+// Middleware для отключения кеширования API запросов
+app.use('/api', (req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+});
+
+app.use(bodyParser.json());
+app.use(express.static('public'));
+
+// Явные маршруты для важных файлов TON Connect
+app.get('/tonconnect-manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.sendFile(path.join(__dirname, 'public', 'tonconnect-manifest.json'));
+});
+
+app.get('/icon.svg', (req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.sendFile(path.join(__dirname, 'public', 'icon.svg'));
+});
+
+app.get('/terms.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+});
+
+app.get('/privacy.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
+// Favicon
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Content-Type', 'image/x-icon');
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
+// Тестовый файл для отладки платежей
+app.get('/test-payment.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-payment.html'));
+});
+
+// Страница реального тестирования платежей
+app.get('/real-test.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'real-test.html'));
+});
+
+// Отладочная страница для диагностики проблем
+app.get('/debug-test.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'debug-test.html'));
+});
+
+// Страница заказов
+app.get('/orders.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'orders.html'));
+});
+
+// Страница диагностики платежей
+app.get('/debug-payments.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'debug-payments.html'));
+});
+
+// Админ-панель
+app.get('/admin-panel.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin-panel.html'));
+});
+
+// Простой тест для создания заказа без JWT (только для отладки)
+app.post('/api/test-order', async (req, res) => {
+  try {
+    const { product_id, user_id = 1 } = req.body;
+
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [product_id]);
+    const product = productResult.rows[0];
+    
+    if (!product) {
+      return res.status(400).json({ error: 'Товар не найден' });
+    }
+    
+    const orderResult = await db.run('INSERT INTO orders (user_id, product_id) VALUES ($1, $2) RETURNING id', [user_id, product_id]);
+    
+    res.json({ 
+      id: orderResult.id, 
+      message: 'Тестовый заказ создан успешно',
+      product: product.name
+    });
+  } catch (error) {
+    console.error('Error creating test order:', error);
+    res.status(500).json({ error: 'Ошибка создания заказа' });
+  }
+});
+
+// Тестовый endpoint для Stars инвойсов без JWT
+app.post('/api/test-stars-invoice', async (req, res) => {
+  try {
+    const { orderId, productId, amount, description } = req.body;
+    const userId = 1; // Тестовый пользователь
+
+    if (!orderId || !productId || !amount || !description) {
+      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+    }
+
+    // Проверяем существование заказа
+    const getOrder = dbLegacy.prepare('SELECT * FROM orders WHERE id = ?');
+    const order = getOrder.get(orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+
+    const invoice = await paymentService.createStarsInvoice(orderId, userId, productId, amount, description);
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        payload: invoice.payload,
+        telegramInvoice: invoice.telegramInvoice,
+        expiresAt: invoice.expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания тестового Stars инвойса:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Тестовый endpoint для крипто инвойсов без JWT
+app.post('/api/test-crypto-invoice', async (req, res) => {
+  try {
+    const { orderId, productId, amount, currency } = req.body;
+    const userId = 1; // Тестовый пользователь
+
+    if (!orderId || !productId || !amount || !currency) {
+      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+    }
+
+    if (!['TON', 'USDT'].includes(currency)) {
+      return res.status(400).json({ error: 'Неподдерживаемая валюта' });
+    }
+
+    // Проверяем существование заказа
+    const getOrder = dbLegacy.prepare('SELECT * FROM orders WHERE id = ?');
+    const order = getOrder.get(orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+
+    const invoice = await paymentService.createCryptoInvoice(orderId, userId, productId, amount, currency);
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        payload: invoice.payload,
+        address: invoice.address,
+        memo: invoice.memo,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        expiresAt: invoice.expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка создания тестового крипто инвойса:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Health check endpoint для предотвращения засыпания на бесплатном тарифе
+app.get('/healthz', (req, res) => {
+  res.status(200).send('OK');
+});
+
+// Настройка multer для загрузки изображений
+const uploadsDir = 'public/uploads';
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
+const upload = multer({ storage });
+
+// Инициализация базы данных PostgreSQL
+// db уже импортирован из ./db/index.js выше
+const dbLegacy = new PostgresAdapter(process.env.DATABASE_URL); // ← Старый адаптер для совместимости
+
+// Создаём экземпляр authMiddleware с доступом к db
+const authMiddlewareWithDB = authMiddleware(dbLegacy); // ← Используем старый для middleware
+
+// Функция для создания таблиц PostgreSQL
+async function initDB() {
+  try {
+    console.log('🔄 Инициализация базы данных PostgreSQL...');
+    
+    // Таблица пользователей
+    await dbLegacy.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        telegram_id BIGINT UNIQUE NOT NULL,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        is_admin BOOLEAN DEFAULT false,
+        referrer_id INTEGER,
+        referral_earnings DECIMAL(10,2) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Таблица товаров
+    await dbLegacy.exec(`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        price DECIMAL(10,2) NOT NULL,
+        price_ton DECIMAL(10,4),
+        price_usdt DECIMAL(10,4),
+        price_stars INTEGER,
+        image_url TEXT,
+        category TEXT,
+        stock INTEGER DEFAULT 0,
+        infinite_stock BOOLEAN DEFAULT false,
+        is_active BOOLEAN DEFAULT true,
+        file_path TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Добавляем колонку file_path если её нет
+    try {
+      await dbLegacy.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
+    } catch (e) {
+      // Колонка уже существует
+    }
+
+    // Таблица отзывов
+    await dbLegacy.exec(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comment TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Миграция: добавляем новые колонки цен если их нет
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE products 
+        ADD COLUMN IF NOT EXISTS price_ton DECIMAL(10,4),
+        ADD COLUMN IF NOT EXISTS price_usdt DECIMAL(10,4),
+        ADD COLUMN IF NOT EXISTS price_stars INTEGER
+      `);
+      console.log('✅ Миграция: колонки price_ton, price_usdt, price_stars проверены/добавлены');
+    } catch (e) {
+      console.log('⚠️ Миграция цен: колонки уже существуют или ошибка:', e.message);
+    }
+    
+    // Таблица заказов
+    await dbLegacy.exec(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        status TEXT DEFAULT 'pending',
+        price DECIMAL(10,2),
+        payment_method TEXT,
+        transaction_hash TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Таблица инвойсов (для платежей)
+    await dbLegacy.exec(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        amount DECIMAL(20,9) NOT NULL,
+        currency TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        payment_url TEXT,
+        invoice_id TEXT UNIQUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Миграция: изменяем тип amount для поддержки TON (до 9 знаков после запятой)
+    try {
+      await dbLegacy.exec(`ALTER TABLE invoices ALTER COLUMN amount TYPE DECIMAL(20,9)`);
+      console.log('✅ Миграция: колонка amount изменена на DECIMAL(20,9)');
+    } catch (e) {
+      console.log('⚠️ Миграция amount: уже выполнена или ошибка:', e.message);
+    }
+
+    // Миграция: добавляем колонку transaction_hash
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE invoices 
+        ADD COLUMN IF NOT EXISTS transaction_hash TEXT
+      `);
+      console.log('✅ Миграция: колонка transaction_hash добавлена');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('⚠️ Ошибка миграции transaction_hash:', e.message);
+      }
+    }
+
+    // Миграция: добавляем колонку paid_at
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE invoices 
+        ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP
+      `);
+      console.log('✅ Миграция: колонка paid_at добавлена');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('⚠️ Ошибка миграции paid_at:', e.message);
+      }
+    }
+
+    // Миграция: добавляем колонки для Telegram Stars
+    try {
+      await dbLegacy.exec(`
+        ALTER TABLE invoices 
+        ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT,
+        ADD COLUMN IF NOT EXISTS payload TEXT,
+        ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS address TEXT,
+        ADD COLUMN IF NOT EXISTS memo TEXT,
+        ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id)
+      `);
+      console.log('✅ Миграция: колонки для Telegram Stars добавлены');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('⚠️ Ошибка миграции Telegram Stars:', e.message);
+      }
+    }
+
+    // Добавляем админа по умолчанию
+    await db.run(`
+      INSERT INTO users (telegram_id, username, is_admin) 
+      VALUES ($1, $2, $3)
+      ON CONFLICT (telegram_id) DO NOTHING
+    `, ['853232715', 'admin', true]);
+    
+    console.log('✅ База данных PostgreSQL инициализирована успешно');
+  } catch (error) {
+    console.error('❌ Ошибка инициализации базы данных:', error);
+    throw error;
+  }
+}
+
+// Инициализация сервиса платежей
+let paymentService;
+
+// Запускаем инициализацию (будет выполнено при старте сервера)
+initDB()
+  .then(async () => {
+    // После инициализации основных таблиц, инициализируем платежи
+    try {
+      paymentService = new PaymentService(db, BOT_TOKEN);
+      await paymentService.initPaymentTables();
+      console.log('✅ Сервис платежей инициализирован');
+      
+      // === ПОДКЛЮЧЕНИЕ МОДУЛЬНЫХ РОУТОВ ===
+      // Сохраняем paymentService для доступа из роутов
+      app.set('paymentService', paymentService);
+      
+      // Подключаем модульные роуты (db импортируется внутри модулей)
+      app.use('/api/orders', ordersRoutes(authMiddlewareWithDB));
+      app.use('/api/ton', tonRoutes(authMiddlewareWithDB));
+      console.log('✅ Модульные роуты подключены');
+      
+    } catch (error) {
+      console.error('❌ Ошибка инициализации сервиса платежей:', error);
+      throw error;
+    }
+  })
+  .catch(err => {
+    console.error('❌ Критическая ошибка при инициализации:', err);
+    process.exit(1);
+  });
+
+// Роут для авторизации через Telegram
+app.post('/api/auth/telegram', async (req, res) => {
+    console.log('\n👤 [SERVER AUTH] Запрос авторизации через Telegram');
+    try {
+        const { initData } = req.body;
+        console.log('👤 [SERVER AUTH] Получены initData:', initData);
+        
+        if (!initData || !initData.user) {
+            console.error('❌ [SERVER AUTH] Данные пользователя не предоставлены');
+            return res.status(400).json({ error: 'Данные пользователя не предоставлены' });
+        }
+        
+        const { id, first_name, last_name, username } = initData.user;
+        console.log('👤 [SERVER AUTH] Данные пользователя:', { id, first_name, last_name, username });
+        
+        if (!id) {
+            console.error('❌ [SERVER AUTH] ID пользователя не предоставлен');
+            return res.status(400).json({ error: 'ID пользователя не предоставлен' });
+        }
+        
+        // Проверяем, является ли пользователь админом
+        const adminIds = process.env.ADMIN_TELEGRAM_IDS ? 
+            process.env.ADMIN_TELEGRAM_IDS.split(',').map(id => id.trim()) : 
+            ADMIN_TELEGRAM_IDS;
+        const isAdmin = adminIds.includes(id.toString());
+        
+        console.log('🔐 [AUTH] Проверка админ прав:', { 
+            userId: id.toString(), 
+            adminIds, 
+            isAdmin 
+        });
+        
+        // Проверяем, есть ли пользователь в базе (async)
+        let getUser = dbLegacy.prepare('SELECT * FROM users WHERE telegram_id = $1');
+        let user = await getUser.get(id.toString());
+        
+        // Если пользователя нет, создаем его
+        if (!user) {
+            const insertUser = dbLegacy.prepare(`
+                INSERT INTO users (telegram_id, username, is_admin, first_name, last_name) 
+                VALUES ($1, $2, $3, $4, $5) RETURNING id
+            `);
+            const result = await insertUser.get(
+                id.toString(), 
+                username || '', 
+                isAdmin,
+                first_name || '',
+                last_name || ''
+            );
+            
+            user = {
+                id: result.id,  // ← PostgreSQL возвращает id через RETURNING
+                telegram_id: id.toString(),
+                username: username || '',
+                first_name: first_name || '',
+                last_name: last_name || '',
+                is_admin: isAdmin
+            };
+            
+            console.log('✅ [AUTH] Создан новый пользователь:', user);
+        } else {
+            // Обновляем is_admin если изменился
+            if (user.is_admin !== isAdmin) {
+                const updateUser = dbLegacy.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
+                await updateUser.run(isAdmin, user.id);
+                user.is_admin = isAdmin;
+                console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
+            }
+        }
+        
+        // КРИТИЧНО: Проверяем user перед генерацией токена
+        console.log('🔑 [AUTH] User object before generateToken:', user);
+        if (!user.id) {
+            console.error('❌ [AUTH] CRITICAL: user.id is undefined!');
+            return res.status(500).json({ error: 'Failed to create user in database' });
+        }
+        
+        // Создаем JWT токен
+        const token = generateToken(user);
+        
+        res.json({
+            success: true,
+            token: token,
+            user: {
+                id: user.id,
+                telegram_id: user.telegram_id,
+                first_name: user.first_name || first_name,
+                last_name: user.last_name || last_name,
+                username: user.username,
+                is_admin: user.is_admin
+            }
+        });
+    } catch (error) {
+        console.error('Error in Telegram auth:', error);
+        res.status(500).json({ error: 'Ошибка авторизации' });
+    }
+});
+
+// Получение профиля пользователя
+app.get('/api/user/profile', authMiddlewareWithDB, async (req, res) => {
+  try {
+    console.log('👤 [PROFILE] Получение профиля пользователя:', req.user.telegram_id);
+    
+    res.json({
+      success: true,
+      user: {
+        id: req.user.id,
+        telegram_id: req.user.telegram_id,
+        first_name: req.user.first_name,
+        last_name: req.user.last_name,
+        username: req.user.username,
+        is_admin: req.user.is_admin,
+        created_at: req.user.created_at
+      }
+    });
+  } catch (error) {
+    console.error('❌ [PROFILE] Ошибка получения профиля:', error);
+    res.status(500).json({ error: 'Ошибка получения профиля' });
+  }
+});
+
+// API маршруты
+
+// Регистрация/авторизация пользователя
+app.post('/api/auth', async (req, res) => {
+  try {
+    const { telegram_id, username, first_name, last_name, ref } = req.body;
+    let referrer_id = null;
+    if (ref) {
+      referrer_id = parseInt(ref, 10);
+    }
+    
+    // Проверяем, является ли пользователь админом
+    const adminIds = process.env.ADMIN_TELEGRAM_IDS ? 
+        process.env.ADMIN_TELEGRAM_IDS.split(',').map(id => id.trim()) : 
+        ADMIN_TELEGRAM_IDS;
+    const isAdmin = adminIds.includes(telegram_id.toString());
+    
+    console.log('🔐 [AUTH] Проверка админ прав:', { 
+        userId: telegram_id.toString(), 
+        adminIds, 
+        isAdmin 
+    });
+    
+    // Ищем существующего пользователя
+    const getUser = dbLegacy.prepare('SELECT * FROM users WHERE telegram_id = $1');
+    const user = await getUser.get(telegram_id);
+    
+    if (user) {
+      // Пользователь существует - обновляем данные если нужно
+      if (first_name || last_name) {
+        const updateUser = dbLegacy.prepare('UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3');
+        await updateUser.run(first_name || user.first_name, last_name || user.last_name, user.id);
+        user.first_name = first_name || user.first_name;
+        user.last_name = last_name || user.last_name;
+      }
+      
+      // Обновляем is_admin если изменился
+      if (user.is_admin !== isAdmin) {
+        const updateAdminStatus = dbLegacy.prepare('UPDATE users SET is_admin = $1 WHERE id = $2');
+        await updateAdminStatus.run(isAdmin, user.id);
+        user.is_admin = isAdmin;
+        console.log('✅ [AUTH] Обновлены права админа:', isAdmin);
+      }
+      
+      console.log('🔑 [AUTH /api/auth] User object before generateToken:', user);
+      const token = generateToken(user);
+      res.json({ 
+        token, 
+        user: { 
+          id: user.id, 
+          telegram_id: user.telegram_id, 
+          username: user.username,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          is_admin: user.is_admin,
+          isAdmin: user.is_admin,  // Добавляем camelCase для совместимости
+          role: user.is_admin ? 'admin' : 'user',
+          referrer_id: user.referrer_id 
+        } 
+      });
+    } else {
+      // Создаем нового пользователя
+      const insertUser = dbLegacy.prepare('INSERT INTO users (telegram_id, username, first_name, last_name, referrer_id, is_admin) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id');
+      const result = await insertUser.get(telegram_id, username, first_name, last_name, referrer_id, isAdmin);
+      
+      const newUser = {
+        id: result.id,  // PostgreSQL возвращает id через RETURNING
+        telegram_id,
+        username,
+        first_name,
+        last_name,
+        is_admin: isAdmin
+      };
+      
+      console.log('✅ [AUTH] Создан новый пользователь с is_admin:', isAdmin);
+      console.log('🔑 [AUTH /api/auth] New user object before generateToken:', newUser);
+      
+      const token = generateToken(newUser);
+      res.json({ 
+        token, 
+        user: { 
+          id: result.id, 
+          telegram_id, 
+          username,
+          first_name,
+          last_name,
+          is_admin: isAdmin,
+          isAdmin: isAdmin,  // Добавляем camelCase для совместимости
+          role: isAdmin ? 'admin' : 'user',
+          referrer_id 
+        } 
+      });
+    }
+  } catch (error) {
+    console.error('DB error:', error);
+    res.status(500).json({ error: 'Ошибка базы данных', details: error.message });
+  }
+});
+
+// Получение списка товаров
+app.get('/api/products', async (req, res) => {
+  console.log('\n📦 [SERVER LOAD] Запрос на получение списка товаров');
+  console.log('📦 [SERVER LOAD] Query params:', req.query);
+  
+  // Отключаем кеширование для актуальных данных
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  try {
+    // Сначала проверим все товары в базе
+    const allProductsResult = await db.query('SELECT id, name, is_active, created_at FROM products ORDER BY created_at DESC');
+    const allProducts = allProductsResult.rows;
+    console.log(`🛍️ [PRODUCTS API] Всего товаров в базе: ${allProducts.length}`);
+    allProducts.forEach(product => {
+      console.log(`   - ${product.name} (ID: ${product.id}) - активен: ${product.is_active}`);
+    });
+    
+    // Получаем все активные товары (PostgreSQL async)
+    const productsResult = await db.query('SELECT * FROM products WHERE is_active = true ORDER BY created_at DESC');
+    const products = productsResult.rows;
+    console.log(`📦 [SERVER LOAD] Найдено активных товаров: ${products.length}`);
+    
+    if (products.length === 0) {
+      console.log('⚠️ [SERVER LOAD] Нет активных товаров для отображения');
+      return res.json(products);
+    }
+    
+    // Для каждого товара считаем рейтинг и количество отзывов
+    const productIds = products.map(p => p.id);
+    const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
+    const ratingsResult = await db.query(`SELECT product_id, AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id IN (${placeholders}) GROUP BY product_id`, productIds);
+    const ratings = ratingsResult.rows;
+    
+    // Создаем карту рейтингов
+    const ratingMap = {};
+    ratings.forEach(r => { 
+      ratingMap[r.product_id] = r; 
+    });
+    
+    // Добавляем рейтинги к товарам и конвертируем типы для клиента
+    const result = products.map(p => ({
+      ...p,
+      price: parseFloat(p.price), // Конвертируем DECIMAL в number
+      price_ton: p.price_ton ? parseFloat(p.price_ton) : null,
+      price_usdt: p.price_usdt ? parseFloat(p.price_usdt) : null,
+      price_stars: p.price_stars ? parseInt(p.price_stars) : null,
+      rating: parseFloat(ratingMap[p.id]?.avg_rating) || 0,
+      reviewsCount: parseInt(ratingMap[p.id]?.reviews_count) || 0
+    }));
+    
+    console.log('✅ [SERVER LOAD] Отправка списка товаров:', result.length, 'шт.');
+    console.log('📦 [SERVER LOAD] Первые 3 ID:', result.slice(0, 3).map(p => p.id));
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [SERVER LOAD] Ошибка получения товаров:', error);
+    res.status(500).json({ error: 'Ошибка получения товаров', details: error.message });
+  }
+});
+
+// Получение товара по ID
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1 AND is_active = true', [req.params.id]);
+    const product = productResult.rows[0];
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    const ratingResult = await db.query('SELECT AVG(rating) as avg_rating, COUNT(*) as reviews_count FROM reviews WHERE product_id = $1', [product.id]);
+    const rating = ratingResult.rows[0];
+    
+    res.json({
+      ...product,
+      price: parseFloat(product.price),
+      price_ton: product.price_ton ? parseFloat(product.price_ton) : null,
+      price_usdt: product.price_usdt ? parseFloat(product.price_usdt) : null,
+      price_stars: product.price_stars ? parseInt(product.price_stars) : null,
+      rating: parseFloat(rating?.avg_rating) || 0,
+      reviewsCount: parseInt(rating?.reviews_count) || 0
+    });
+  } catch (error) {
+    console.error('Error getting product:', error);
+    res.status(500).json({ error: 'Ошибка получения товара' });
+  }
+});
+
+// Ручная проверка криптоплатежей (для отладки)
+app.post('/api/payments/crypto/check', authMiddlewareWithDB, async (req, res) => {
+  try {
+    console.log('🔍 Запуск ручной проверки криптоплатежей...');
+    await paymentService.checkCryptoPayments();
+    
+    res.json({ success: true, message: 'Проверка криптоплатежей выполнена - смотрите логи сервера' });
+  } catch (error) {
+    console.error('Ошибка проверки криптоплатежей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Эндпоинт для создания платежа (для Telegram Wallet интеграции)
+app.post('/api/create-payment', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { product_id, amount, currency = 'TON' } = req.body;
+    const userId = req.user.id;
+    
+    console.log('💳 [CREATE-PAYMENT] Создание платежа:', { userId, product_id, amount, currency });
+    
+    if (!product_id || !amount) {
+      return res.status(400).json({ error: 'Необходимы product_id и amount' });
+    }
+    
+    // Проверяем, что товар существует
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [product_id]);
+    const product = productResult.rows[0];
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Создаем запись о платеже в базе
+    const result = await db.query(`
+      INSERT INTO payments (user_id, product_id, amount, currency, status, created_at)
+      VALUES ($1, $2, $3, $4, 'pending', NOW()) RETURNING *
+    `, [userId, product_id, amount, currency]);
+    
+    const payment = result.rows[0];
+    console.log('✅ [CREATE-PAYMENT] Платеж создан:', payment);
+    
+    // Генерируем данные для инвойса Telegram
+    const invoiceData = {
+      payment_id: payment.id,
+      amount: amount,
+      currency: currency,
+      description: `Оплата товара "${product.name}"`,
+      product_name: product.name
+    };
+    
+    res.json({
+      success: true,
+      payment: payment,
+      invoice_data: invoiceData,
+      payment_id: payment.id
+    });
+  } catch (error) {
+    console.error('❌ [CREATE-PAYMENT] Ошибка создания платежа:', error);
+    res.status(500).json({ error: 'Ошибка создания платежа: ' + error.message });
+  }
+});
+
+// Эндпоинт для проверки статуса Stars платежа
+app.get('/api/payments/status/:paymentId', async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    console.log('🔍 [PAYMENT STATUS] Проверка статуса платежа:', paymentId);
+    
+    // Если это Stars платеж (начинается с stars_)
+    if (paymentId.startsWith('stars_')) {
+      // Извлекаем orderId из paymentId (формат: stars_orderId_timestamp)
+      const parts = paymentId.split('_');
+      const orderId = parts[1];
+      
+      if (!orderId) {
+        return res.status(400).json({ error: 'Неверный формат payment ID' });
+      }
+      
+      // Проверяем статус заказа в базе данных
+      const orderResult = await db.query(
+        'SELECT status, payment_method FROM orders WHERE id = $1',
+        [orderId]
+      );
+      
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Заказ не найден' });
+      }
+      
+      const order = orderResult.rows[0];
+      console.log('📊 [PAYMENT STATUS] Статус заказа:', order.status);
+      
+      res.json({ 
+        status: order.status,
+        payment_id: paymentId,
+        order_id: orderId,
+        payment_method: order.payment_method
+      });
+    } else {
+      // Для других типов платежей (TON/USDT)
+      res.status(404).json({ error: 'Тип платежа не поддерживается для проверки статуса' });
+    }
+  } catch (error) {
+    console.error('❌ [PAYMENT STATUS] Ошибка проверки статуса платежа:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Упрощенный эндпоинт для создания Stars инвойса
+app.post('/api/create-stars-invoice', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { orderId, productId } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [CREATE-STARS] Создание Stars инвойса:', { userId, orderId, productId });
+    
+    if (!orderId || !productId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Необходимы orderId и productId' 
+      });
+    }
+    
+    // Получаем информацию о товаре
+    const productResult = await db.query(
+      'SELECT name, price_stars, description FROM products WHERE id = $1',
+      [productId]
+    );
+    
+    if (productResult.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Товар не найден' 
+      });
+    }
+    
+    const product = productResult.rows[0];
+    const starsAmount = product.price_stars || 100; // По умолчанию 100 Stars
+    
+    console.log('💰 [CREATE-STARS] Цена товара:', starsAmount, 'Stars');
+    
+    // Создаем payload для отслеживания
+    const payload = `stars_order_${orderId}`;
+    
+    // Создаем инвойс через Telegram Bot API
+    const invoiceResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: product.name,
+        description: product.description || `Оплата товара: ${product.name}`,
+        payload: payload,
+        provider_token: '', // Пусто для Stars!
+        currency: 'XTR', // Telegram Stars
+        prices: [{ 
+          label: 'Stars', 
+          amount: starsAmount // Для Stars amount = количество звезд
+        }]
+      })
+    });
+    
+    const invoiceData = await invoiceResponse.json();
+    console.log('📄 [CREATE-STARS] Ответ Telegram API:', invoiceData);
+    
+    if (invoiceData.ok) {
+      // Сохраняем информацию об инвойсе в базу данных
+      await db.query(
+        'UPDATE orders SET telegram_invoice_data = $1, payload = $2 WHERE id = $3',
+        [JSON.stringify(invoiceData.result), payload, orderId]
+      );
+      
+      res.json({
+        success: true,
+        invoice_link: invoiceData.result,
+        order_id: orderId,
+        payload: payload
+      });
+    } else {
+      throw new Error(invoiceData.description || 'Ошибка создания инвойса');
+    }
+    
+  } catch (error) {
+    console.error('❌ [CREATE-STARS] Ошибка создания Stars инвойса:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Ошибка создания платежа: ' + error.message
+    });
+  }
+});
+
+// Эндпоинт для создания Telegram Stars инвойса (старый)
+app.post('/api/payments/stars/create-invoice', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { orderId, productId, amount, description } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [STARS] Создание Stars инвойса:', { userId, orderId, productId, amount });
+    
+    if (!orderId || !productId || !amount) {
+      return res.status(400).json({ error: 'Необходимы orderId, productId и amount' });
+    }
+    
+    // Проверяем заказ
+    const orderResult = await db.query(
+      'SELECT * FROM orders WHERE id = $1 AND user_id = $2', 
+      [orderId, userId]
+    );
+    
+    const order = orderResult.rows[0];
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    // Проверяем товар
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [productId]);
+    const product = productResult.rows[0];
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Вычисляем цену в Stars (примерно 1$ = 100 Stars)
+    const starsAmount = Math.ceil(parseFloat(amount) * 100);
+    
+    // Создаем уникальный payload для отслеживания платежа
+    const payload = `stars_${orderId}_${Date.now()}`;
+    
+    // Создаем инвойс для Telegram Stars
+    const telegramInvoice = {
+      title: product.name,
+      description: description || product.description || 'Покупка в магазине',
+      payload: payload,
+      provider_token: '', // Для Stars не нужен
+      currency: 'XTR', // Telegram Stars
+      prices: [{ label: product.name, amount: starsAmount }],
+      max_tip_amount: 0,
+      suggested_tip_amounts: [],
+      start_parameter: `stars_${orderId}`,
+      provider_data: JSON.stringify({
+        receipt: {
+          items: [{
+            description: product.name,
+            quantity: '1',
+            amount: { value: starsAmount, currency: 'XTR' }
+          }]
+        }
+      }),
+      photo_url: product.image_url || null,
+      photo_size: product.image_url ? 512 : null,
+      photo_width: product.image_url ? 512 : null,
+      photo_height: product.image_url ? 512 : null,
+      need_name: false,
+      need_phone_number: false,
+      need_email: false,
+      need_shipping_address: false,
+      send_phone_number_to_provider: false,
+      send_email_to_provider: false,
+      is_flexible: false
+    };
+    
+    // Сохраняем инвойс в базу данных
+    const invoiceResult = await db.query(`
+      INSERT INTO invoices (
+        order_id, user_id, product_id, amount, currency, 
+        address, memo, status, expires_at, payload, 
+        telegram_invoice_data, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) 
+      RETURNING *
+    `, [
+      orderId, userId, productId, starsAmount, 'XTR',
+      null, payload, 'pending', 
+      new Date(Date.now() + 60 * 60 * 1000), // 1 час
+      payload, JSON.stringify(telegramInvoice)
+    ]);
+    
+    const invoice = invoiceResult.rows[0];
+    
+    console.log('✅ [STARS] Stars инвойс создан:', { invoiceId: invoice.id, payload, starsAmount });
+    
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        payload: payload,
+        amount: starsAmount,
+        currency: 'XTR',
+        expiresAt: invoice.expires_at,
+        telegramInvoice: telegramInvoice
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ [STARS] Ошибка создания Stars инвойса:', error);
+    res.status(500).json({ error: 'Ошибка создания инвойса: ' + error.message });
+  }
+});
+
+// Основной Telegram вебхук для обработки всех обновлений
+app.post('/api/telegram-webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    console.log('📨 [TELEGRAM-WEBHOOK] Получен update:', JSON.stringify(update, null, 2));
+    
+    // Обработка pre_checkout_query (обязательно для Stars)
+    if (update.pre_checkout_query) {
+      const preCheckout = update.pre_checkout_query;
+      console.log('🔍 [PRE-CHECKOUT] Проверка платежа:', preCheckout.invoice_payload);
+      
+      // Проверяем, что заказ существует и валиден
+      let isOrderValid = true;
+      
+      if (preCheckout.invoice_payload.startsWith('stars_order_')) {
+        const orderId = preCheckout.invoice_payload.replace('stars_order_', '');
+        
+        const orderResult = await db.query(
+          'SELECT status FROM orders WHERE id = $1',
+          [orderId]
+        );
+        
+        if (orderResult.rows.length === 0 || orderResult.rows[0].status !== 'pending') {
+          isOrderValid = false;
+        }
+      }
+      
+      // Отвечаем на pre_checkout_query
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerPreCheckoutQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pre_checkout_query_id: preCheckout.id,
+          ok: isOrderValid,
+          error_message: isOrderValid ? undefined : 'Заказ недоступен для оплаты'
+        })
+      });
+      
+      console.log('✅ [PRE-CHECKOUT] Ответ отправлен:', isOrderValid ? 'OK' : 'ERROR');
+    }
+    
+    // Обработка успешного платежа Stars
+    if (update.message && update.message.successful_payment) {
+      const payment = update.message.successful_payment;
+      const payload = payment.invoice_payload;
+      const userId = update.message.from.id;
+      
+      console.log('🎉 [SUCCESSFUL-PAYMENT] Успешный платеж:', { 
+        payload, 
+        amount: payment.total_amount,
+        userId 
+      });
+      
+      // Если это Stars платеж
+      if (payload.startsWith('stars_order_')) {
+        const orderId = payload.replace('stars_order_', '');
+        
+        // Обновляем статус заказа в базе данных
+        const updateResult = await db.query(
+          'UPDATE orders SET status = $1, paid_at = NOW(), transaction_hash = $2 WHERE id = $3 AND status = $4',
+          ['paid', payment.telegram_payment_charge_id, orderId, 'pending']
+        );
+        
+        if (updateResult.rowCount > 0) {
+          console.log(`✅ [SUCCESSFUL-PAYMENT] Stars платеж подтвержден для заказа ${orderId}`);
+          
+          // Отправляем уведомление пользователю
+          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: userId,
+              text: `🎉 Оплата прошла успешно!\n\nВаш заказ #${orderId} оплачен и будет обработан в ближайшее время.`
+            })
+          });
+        } else {
+          console.log(`⚠️ [SUCCESSFUL-PAYMENT] Заказ ${orderId} не найден или уже оплачен`);
+        }
+      }
+    }
+    
+    res.json({ ok: true });
+    
+  } catch (error) {
+    console.error('❌ [TELEGRAM-WEBHOOK] Ошибка обработки вебхука:', error);
+    res.status(500).json({ error: 'Ошибка обработки вебхука' });
+  }
+});
+
+// Webhook для обработки Telegram Stars платежей (старый)
+app.post('/api/payments/stars/webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    console.log('⭐ [STARS-WEBHOOK] Получен update:', JSON.stringify(update, null, 2));
+    
+    // Обрабатываем successful_payment
+    if (update.message && update.message.successful_payment) {
+      const payment = update.message.successful_payment;
+      const payload = payment.invoice_payload;
+      
+      console.log('💰 [STARS-WEBHOOK] Успешный платеж:', { payload, amount: payment.total_amount });
+      
+      // Находим инвойс по payload
+      const invoiceResult = await db.query(
+        'SELECT * FROM invoices WHERE payload = $1 AND status = $2',
+        [payload, 'pending']
+      );
+      
+      const invoice = invoiceResult.rows[0];
+      if (!invoice) {
+        console.log('⚠️ [STARS-WEBHOOK] Инвойс не найден:', payload);
+        return res.json({ ok: true });
+      }
+      
+      // Обновляем статус инвойса и заказа
+      await db.query('UPDATE invoices SET status = $1, paid_at = NOW() WHERE id = $2', ['paid', invoice.id]);
+      await db.query('UPDATE orders SET status = $1 WHERE id = $2', ['paid', invoice.order_id]);
+      
+      console.log('✅ [STARS-WEBHOOK] Платеж обработан:', { 
+        invoiceId: invoice.id, 
+        orderId: invoice.order_id 
+      });
+      
+      // Уведомляем пользователя (если настроен BOT_TOKEN)
+      if (process.env.BOT_TOKEN) {
+        try {
+          const productResult = await db.query('SELECT name FROM products WHERE id = $1', [invoice.product_id]);
+          const product = productResult.rows[0];
+          
+          await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: update.message.from.id,
+              text: `🎉 Платеж успешно обработан!\n\n📦 Товар: ${product?.name}\n💰 Сумма: ${payment.total_amount} Stars\n\nСпасибо за покупку!`,
+              parse_mode: 'HTML'
+            })
+          });
+        } catch (notifyError) {
+          console.error('❌ [STARS-WEBHOOK] Ошибка уведомления:', notifyError);
+        }
+      }
+    }
+    
+    res.json({ ok: true });
+    
+  } catch (error) {
+    console.error('❌ [STARS-WEBHOOK] Ошибка обработки webhook:', error);
+    res.status(500).json({ error: 'Ошибка обработки платежа' });
+  }
+});
+
+// Эндпоинт для добавления отзыва
+app.post('/api/reviews', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { product_id, order_id, rating, comment } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [REVIEW] Добавление отзыва:', { userId, product_id, order_id, rating });
+    
+    if (!product_id || !rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Необходимы product_id и rating (1-5)' });
+    }
+    
+    // Проверяем, что заказ существует и принадлежит пользователю
+    if (order_id) {
+      const orderResult = await db.query(
+        'SELECT * FROM orders WHERE id = $1 AND user_id = $2 AND product_id = $3 AND status = $4', 
+        [order_id, userId, product_id, 'paid']
+      );
+      
+      if (orderResult.rows.length === 0) {
+        return res.status(400).json({ error: 'Заказ не найден или не оплачен' });
+      }
+    }
+    
+    // Проверяем, что пользователь еще не оставлял отзыв на этот товар
+    const existingReview = await db.query(
+      'SELECT id FROM reviews WHERE user_id = $1 AND product_id = $2',
+      [userId, product_id]
+    );
+    
+    if (existingReview.rows.length > 0) {
+      return res.status(400).json({ error: 'Вы уже оставили отзыв на этот товар' });
+    }
+    
+    // Добавляем отзыв
+    const reviewResult = await db.query(`
+      INSERT INTO reviews (user_id, product_id, order_id, rating, comment, created_at) 
+      VALUES ($1, $2, $3, $4, $5, NOW()) 
+      RETURNING *
+    `, [userId, product_id, order_id, rating, comment || null]);
+    
+    const review = reviewResult.rows[0];
+    
+    console.log('✅ [REVIEW] Отзыв добавлен:', review.id);
+    
+    res.json({
+      success: true,
+      review: review
+    });
+    
+  } catch (error) {
+    console.error('❌ [REVIEW] Ошибка добавления отзыва:', error);
+    res.status(500).json({ error: 'Ошибка добавления отзыва: ' + error.message });
+  }
+});
+
+// Эндпоинт для получения отзывов товара
+app.get('/api/products/:id/reviews', async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    
+    const reviewsResult = await db.query(`
+      SELECT 
+        r.id,
+        r.rating,
+        r.comment,
+        r.created_at,
+        u.username,
+        u.first_name,
+        u.last_name,
+        u.telegram_id
+      FROM reviews r
+      JOIN users u ON r.user_id = u.id
+      WHERE r.product_id = $1
+      ORDER BY r.created_at DESC
+    `, [productId]);
+    
+    const reviews = reviewsResult.rows.map(review => ({
+      ...review,
+      author_name: review.first_name || review.username || 'Пользователь'
+    }));
+    
+    res.json(reviews);
+    
+  } catch (error) {
+    console.error('❌ [REVIEWS] Ошибка получения отзывов:', error);
+    res.status(500).json({ error: 'Ошибка получения отзывов' });
+  }
+});
+
+// Эндпоинт для отмены/истечения заказа
+app.post('/api/orders/:id/expire', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const userId = req.user.id;
+    
+    console.log(`⏰ [EXPIRE] Отмена заказа #${orderId} пользователем ${userId}`);
+    
+    // Проверяем, что заказ существует и принадлежит пользователю
+    const orderResult = await db.query(
+      'SELECT * FROM orders WHERE id = $1 AND user_id = $2', 
+      [orderId, userId]
+    );
+    
+    const order = orderResult.rows[0];
+    if (!order) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    if (order.status === 'paid') {
+      return res.status(400).json({ error: 'Нельзя отменить оплаченный заказ' });
+    }
+    
+    // Обновляем статус заказа
+    await db.query(
+      'UPDATE orders SET status = $1 WHERE id = $2',
+      ['expired', orderId]
+    );
+    
+    console.log(`✅ [EXPIRE] Заказ #${orderId} успешно отменён`);
+    
+    res.json({
+      success: true,
+      message: 'Заказ успешно отменён',
+      order_id: orderId,
+      status: 'expired'
+    });
+    
+  } catch (error) {
+    console.error('❌ [EXPIRE] Ошибка отмены заказа:', {
+      error: error.message,
+      stack: error.stack,
+      orderId: req.params.id,
+      userId: req.user?.id
+    });
+    res.status(500).json({ 
+      error: 'Ошибка отмены заказа: ' + error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Получение ожидающих инвойсов (для отладки)
+app.get('/api/payments/crypto/pending', authMiddlewareWithDB, (req, res) => {
+  try {
+    const getPendingInvoices = dbLegacy.prepare(`
+      SELECT * FROM invoices 
+      WHERE status = 'pending' 
+      AND currency IN ('TON', 'USDT')
+      AND expires_at > datetime('now')
+      ORDER BY created_at DESC
+    `);
+    const pendingInvoices = getPendingInvoices.all();
+    
+    res.json({ 
+      success: true, 
+      count: pendingInvoices.length,
+      invoices: pendingInvoices 
+    });
+  } catch (error) {
+    console.error('Ошибка получения ожидающих инвойсов:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Проверка роли пользователя
+app.get('/api/user/role', authMiddlewareWithDB, (req, res) => {
+  try {
+    // Проверяем админские права по Telegram ID
+    const adminIds = process.env.ADMIN_TELEGRAM_IDS ? process.env.ADMIN_TELEGRAM_IDS.split(',') : [];
+    const userTelegramId = req.user.telegram_id?.toString();
+    
+    let isAdmin = false;
+    
+    // Проверка по Telegram ID (приоритет)
+    if (adminIds.length > 0 && userTelegramId && adminIds.includes(userTelegramId)) {
+      isAdmin = true;
+    }
+    // Fallback: проверка по старому формату
+    else if (req.user.is_admin !== undefined) {
+      isAdmin = req.user.is_admin === 1 || req.user.is_admin === true;
+    } else if (req.user.role) {
+      isAdmin = req.user.role === 'admin';
+    }
+    
+    res.json({ 
+      role: isAdmin ? 'admin' : 'user',
+      telegram_id: userTelegramId,
+      is_admin: isAdmin
+    });
+  } catch (error) {
+    console.error('Ошибка проверки роли:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// ===== ADMIN API ENDPOINTS =====
+// Примечание: Эндпоинт POST /api/admin/products уже определён выше (строка 959) с поддержкой загрузки изображений
+
+// Удаление товара (только для админов)
+app.delete('/api/admin/products/:id', adminMiddleware, async (req, res) => {
+  console.log('\n🗑️ [SERVER DELETE] ========== НАЧАЛО УДАЛЕНИЯ ТОВАРА ==========');
+  try {
+    const productId = parseInt(req.params.id);
+    console.log('🗑️ [SERVER DELETE] Product ID:', productId);
+    console.log('🗑️ [SERVER DELETE] User:', req.user);
+    
+    // Проверяем, существует ли товар
+    const productResult = await db.query('SELECT * FROM products WHERE id = $1', [productId]);
+    const product = productResult.rows[0];
+    console.log('🗑️ [SERVER DELETE] Найден товар:', product);
+    
+    if (!product) {
+      console.error('❌ [SERVER DELETE] Товар не найден в БД');
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Проверяем, есть ли активные заказы у товара
+    const activeOrdersResult = await db.query(`
+      SELECT COUNT(*) as count FROM orders 
+      WHERE product_id = $1 AND status IN ('pending', 'pending_crypto', 'paid')
+    `, [productId]);
+    const activeOrders = activeOrdersResult.rows[0];
+    console.log('🗑️ [SERVER DELETE] Активных заказов:', activeOrders.count);
+    
+    console.log('🗑️ [SERVER DELETE] Начало удаления...');
+    
+    // Удаляем связанные данные в правильном порядке
+    try {
+      // Удаляем отзывы если таблица существует
+      await db.run('DELETE FROM reviews WHERE product_id = $1', [productId]);
+      console.log('🗑️ [SERVER DELETE] Удалены отзывы');
+    } catch (e) {
+      console.log('⚠️ [SERVER DELETE] Таблица reviews не существует или ошибка:', e.message);
+    }
+    
+    // Удаляем заказы
+    await db.run('DELETE FROM orders WHERE product_id = $1', [productId]);
+    console.log('🗑️ [SERVER DELETE] Удалены заказы');
+    
+    // Удаляем товар
+    await db.run('DELETE FROM products WHERE id = $1', [productId]);
+    console.log('🗑️ [SERVER DELETE] Удален товар');
+    
+    console.log('✅ [SERVER DELETE] Удаление успешно завершено');
+    
+    // Проверяем, что товар действительно удален
+    const verifyResult = await db.query('SELECT * FROM products WHERE id = $1', [productId]);
+    const stillExists = verifyResult.rows[0];
+    
+    if (stillExists) {
+      console.error('❌ [SERVER DELETE] ОШИБКА: Товар все еще существует в БД!');
+      return res.status(500).json({ error: 'Ошибка удаления товара' });
+    }
+    
+    console.log('✅ [SERVER DELETE] Товар успешно удален из БД');
+    console.log('🗑️ [SERVER DELETE] ========== КОНЕЦ УДАЛЕНИЯ ТОВАРА ==========\n');
+    
+    res.json({ 
+      success: true, 
+      message: 'Товар успешно удален',
+      deleted_product: product
+    });
+  } catch (error) {
+    console.error('❌ [SERVER DELETE] КРИТИЧЕСКАЯ ОШИБКА:', error);
+    console.error('❌ [SERVER DELETE] Stack trace:', error.stack);
+    console.log('🗑️ [SERVER DELETE] ========== КОНЕЦ УДАЛЕНИЯ ТОВАРА (ОШИБКА) ==========\n');
+    res.status(500).json({ error: 'Внутренняя ошибка сервера', details: error.message });
+  }
+});
+
+// Получение всех товаров для админа
+app.get('/api/admin/products', adminMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        p.*,
+        COUNT(o.id) as total_orders,
+        SUM(CASE WHEN o.status = 'paid' THEN 1 ELSE 0 END) as paid_orders,
+        SUM(CASE WHEN o.status = 'paid' THEN o.total_amount ELSE 0 END) as total_revenue
+      FROM products p
+      LEFT JOIN orders o ON p.id = o.product_id
+      GROUP BY p.id
+      ORDER BY p.created_at DESC
+    `);
+    
+    const products = result.rows;
+    
+    res.json({ success: true, products });
+  } catch (error) {
+    console.error('Ошибка получения товаров:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Создание нового товара (только для админов)
+app.post('/api/admin/products', adminMiddleware, upload.single('image'), async (req, res) => {
+  console.log('\n➕ [ADMIN] Создание нового товара');
+  
+  const {
+    name,
+    description = '',
+    price = 0,
+    price_ton = 0,
+    price_usdt = 0,
+    price_stars = 0,
+    file_path,
+    category = 'general',
+    infinite_stock,  // 'on' или 'off'
+    is_active,       // 'on' или 'off'
+    stock
+  } = req.body;
+
+  console.log('📦 [ADMIN] Данные (raw):', { name, price_ton, infinite_stock, is_active, stock });
+
+  // Обработка изображения
+  let imageUrl = null;
+  if (req.file) {
+    imageUrl = `/uploads/${req.file.filename}`;
+    console.log('🖼️ [ADMIN] Загружено изображение:', imageUrl);
+  }
+
+  // === КРИТИЧНО: ПРЕОБРАЗУЕМ ЧЕКБОКСЫ ===
+  // 'on' = checked, 'off' = unchecked
+  const infiniteStockBool = infinite_stock === 'on' || infinite_stock === true;
+  const isActiveBool = is_active === 'on' || is_active === true;
+  const stockValue = infiniteStockBool ? null : (parseInt(stock) || 0);
+
+  console.log('✅ [ADMIN] Обработано:', { 
+    infiniteStockBool, 
+    isActiveBool, 
+    stockValue,
+    raw_infinite: infinite_stock,
+    raw_active: is_active
+  });
+
+  // Если is_active не задан или пустой, устанавливаем true по умолчанию
+  const finalIsActive = is_active === 'off' ? false : true;
+  console.log(`🔄 [ADMIN] Финальный is_active: ${finalIsActive} (исходное значение: "${is_active}")`);
+
+  try {
+    const product = await db.run(
+      `INSERT INTO products 
+       (name, description, price, price_ton, price_usdt, price_stars, stock, infinite_stock, is_active, image_url, file_path, category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, name, price_ton, infinite_stock, is_active`,
+      [
+        name,
+        description,
+        parseFloat(price) || 0,
+        parseFloat(price_ton) || 0,
+        parseFloat(price_usdt) || 0,
+        parseInt(price_stars) || 0,
+        stockValue,
+        infiniteStockBool,
+        finalIsActive,
+        imageUrl,
+        file_path || null,
+        category
+      ]
+    );
+
+    console.log('✅ [ADMIN] Товар создан успешно:', {
+      id: product.id,
+      name: product.name,
+      is_active: product.is_active,
+      price_ton: product.price_ton
+    });
+    
+    // Проверяем, что товар действительно активен
+    if (product.is_active) {
+      console.log('🟢 [ADMIN] Товар создан как АКТИВНЫЙ - будет отображаться в каталоге');
+    } else {
+      console.log('🔴 [ADMIN] ВНИМАНИЕ: Товар создан как НЕАКТИВНЫЙ - НЕ будет отображаться в каталоге');
+    }
+    
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error('❌ [ADMIN] Ошибка:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Обновление товара (только для админов)
+app.put('/api/admin/products/:id', adminMiddleware, upload.single('image'), async (req, res) => {
+  console.log('\n✏️ [ADMIN] Обновление товара #' + req.params.id);
+  
+  const productId = parseInt(req.params.id);
+  const {
+    name,
+    description = '',
+    price = 0,
+    price_ton = 0,
+    price_usdt = 0,
+    price_stars = 0,
+    file_path,
+    category = 'general',
+    infinite_stock,  // 'on' или 'off'
+    is_active,       // 'on' или 'off'
+    stock
+  } = req.body;
+
+  console.log('📦 [ADMIN] Данные (raw):', { name, price_ton, infinite_stock, is_active, stock });
+
+  try {
+    // Получаем текущий товар
+    const currentProduct = await db.get('SELECT * FROM products WHERE id = $1', [productId]);
+    
+    if (!currentProduct) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+    
+    // Обработка изображения
+    let imageUrl = currentProduct.image_url;
+    if (req.file) {
+      imageUrl = `/uploads/${req.file.filename}`;
+      console.log('🖼️ [ADMIN] Обновлено изображение:', imageUrl);
+    }
+    
+    // === КРИТИЧНО: ПРЕОБРАЗУЕМ ЧЕКБОКСЫ ===
+    const infiniteStockBool = infinite_stock === 'on' || infinite_stock === true;
+    const isActiveBool = is_active === 'on' || is_active === true;
+    const stockValue = infiniteStockBool ? null : (parseInt(stock) || 0);
+    
+    console.log('✅ [ADMIN] Обработано:', { 
+      infiniteStockBool, 
+      isActiveBool, 
+      stockValue,
+      raw_infinite: infinite_stock,
+      raw_active: is_active
+    });
+    
+    const product = await db.run(
+      `UPDATE products 
+       SET name = $1, description = $2, price = $3, price_ton = $4, price_usdt = $5, price_stars = $6, 
+           stock = $7, infinite_stock = $8, is_active = $9, image_url = $10, file_path = $11, category = $12
+       WHERE id = $13
+       RETURNING id, name, price_ton, infinite_stock, is_active`,
+      [
+        name,
+        description,
+        parseFloat(price) || 0,
+        parseFloat(price_ton) || 0,
+        parseFloat(price_usdt) || 0,
+        parseInt(price_stars) || 0,
+        stockValue,
+        infiniteStockBool,
+        isActiveBool,
+        imageUrl,
+        file_path || currentProduct.file_path,
+        category,
+        productId
+      ]
+    );
+    
+    console.log('✅ [ADMIN] Товар обновлён:', product);
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error('❌ [ADMIN] Ошибка:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Получение истории платежей пользователя
+app.get('/api/payments/history', authMiddlewareWithDB, (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const getPayments = dbLegacy.prepare(`
+      SELECT 
+        i.*,
+        o.status as order_status,
+        p.name as product_name,
+        p.price as product_price
+      FROM invoices i
+      JOIN orders o ON i.order_id = o.id
+      JOIN products p ON i.product_id = p.id
+      WHERE i.user_id = ?
+      ORDER BY i.created_at DESC
+      LIMIT 50
+    `);
+    
+    const payments = getPayments.all(userId);
+    
+    res.json({
+      success: true,
+      payments: payments.map(payment => ({
+        id: payment.id,
+        orderId: payment.order_id,
+        productName: payment.product_name,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: payment.status,
+        paymentMethod: payment.currency === 'XTR' ? 'stars' : 'crypto',
+        txHash: payment.crypto_tx_hash,
+        createdAt: payment.created_at,
+        paidAt: payment.paid_at
+      }))
+    });
+  } catch (error) {
+    console.error('Ошибка получения истории платежей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// ===== END PAYMENT API ENDPOINTS =====
+
+// Главная страница
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Админ панель
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Функция для поиска свободного порта
+const findFreePort = (startPort) => {
+  return new Promise((resolve) => {
+    const server = require('net').createServer();
+    server.listen(startPort, (err) => {
+      if (err) {
+        server.close();
+        resolve(findFreePort(startPort + 1));
+      } else {
+        const port = server.address().port;
+        server.close();
+        resolve(port);
+      }
+    });
+  });
+};
+
+// Настройка автоматических задач для платежей
+if (paymentService) {
+  // Проверка криптоплатежей каждые 30 секунд
+  cron.schedule('*/30 * * * * *', () => {
+    console.log('🔄 Запуск автоматической проверки платежей...');
+    paymentService.checkCryptoPayments();
+  });
+
+  // Очистка просроченных инвойсов каждые 10 минут
+  cron.schedule('*/10 * * * *', () => {
+    try {
+      paymentService.cancelExpiredInvoices();
+    } catch (error) {
+      console.error('Ошибка очистки просроченных инвойсов:', error);
+    }
+  });
+
+  console.log('✅ Автоматические задачи платежей настроены');
+}
+
+// Запуск сервера
+const startServer = async () => {
+  try {
+    // Если PORT задан в переменных окружения (продакшен), используем его напрямую
+    // Иначе ищем свободный порт для локальной разработки
+    const targetPort = process.env.PORT ? PORT : await findFreePort(PORT);
+    
+    app.listen(targetPort, '0.0.0.0', () => {
+      console.log(`🚀 Сервер запущен на порту ${targetPort}`);
+      console.log(`🏠 Главная страница: http://localhost:${targetPort}`);
+      console.log(`⚙️  Админ панель: http://localhost:${targetPort}/admin`);
+      console.log(`❤️  Health check: http://localhost:${targetPort}/healthz`);
+      
+      if (!process.env.PORT && targetPort !== PORT) {
+        console.log(`⚠️  Порт ${PORT} был занят, используется порт ${targetPort}`);
+      }
+      
+      if (BOT_TOKEN) {
+        console.log('✅ BOT_TOKEN настроен');
+      } else {
+        console.log('⚠️  BOT_TOKEN не настроен - уведомления Telegram недоступны');
+      }
+      
+      // === ЗАПУСК TON POLLING ===
+      tonPolling(); // db импортируется внутри модуля
+      
+      // Запускаем cron задачу для автоматической отмены истёкших заказов
+      console.log('⏰ Запуск cron задачи для автоудаления заказов (каждые 5 минут)');
+      cron.schedule('*/5 * * * *', async () => {
+        try {
+          console.log('\n⏰ [CRON] Проверка истёкших заказов...');
+          
+          const now = new Date();
+          const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+          
+          // Находим все заказы старше 1 часа со статусом pending
+          const expiredOrdersResult = await db.query(`
+            SELECT * FROM orders 
+            WHERE status IN ('pending', 'pending_crypto') 
+            AND created_at < $1
+          `, [hourAgo.toISOString()]);
+          
+          const expiredOrders = expiredOrdersResult.rows;
+          
+          if (expiredOrders.length > 0) {
+            console.log(`⏰ [CRON] Найдено истёкших заказов: ${expiredOrders.length}`);
+            
+            // Удаляем истёкшие заказы полностью
+            for (const order of expiredOrders) {
+              // Сначала удаляем связанные инвойсы
+              await db.query('DELETE FROM invoices WHERE order_id = $1', [order.id]);
+              
+              // Затем удаляем сам заказ
+              await db.query('DELETE FROM orders WHERE id = $1', [order.id]);
+              
+              console.log(`🗑️ [CRON] Заказ #${order.id} удалён (истёк)`);
+            }
+            
+            console.log(`✅ [CRON] Удалено заказов: ${expiredOrders.length}`);
+          } else {
+            console.log('⏰ [CRON] Истёкших заказов не найдено');
+          }
+        } catch (error) {
+          console.error('❌ [CRON] Ошибка при проверке заказов:', error);
+        }
+      });
+      
+    
+      
+    });
+  } catch (error) {
+    console.error('❌ Ошибка запуска сервера:', error);
+    process.exit(1);
+  }
+};
+
+startServer();

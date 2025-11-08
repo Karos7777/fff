@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Магазин Услуг</title>
+    <title>Магазин</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="payment.css">
     <link rel="stylesheet" href="orders.css">
@@ -21,315 +21,151 @@
         </div>
 
         <header class="header">
-            <h1 data-lang="shopTitle">Магазин</h1>
+            <h1 data-translate="shopTitle">Магазин</h1>
         </header>
 
         <!-- Кнопка поддержки -->
         <div class="support-button">
             <a href="https://t.me/Karos1" target="_blank" class="btn-support">
                 <span class="support-icon">💬</span>
-                <span data-lang="support">Поддержка</span>
+                <span data-translate="support">Поддержка</span>
             </a>
         </div>
 
         <div class="user-info" id="userInfo">
+            <div class="user-avatar" id="userAvatar"></div>
             <span id="userName"></span>
             <div class="user-actions">
                 <button id="myOrdersBtn" class="btn-orders" style="display:none;">
                     <span class="icon">📦</span>
-                    <span data-lang="myOrders">Мои заказы</span>
+                    <span data-translate="myOrders">Мои заказы</span>
                 </button>
-                <button id="logoutBtn" class="btn-secondary" data-lang="logout"></button>
+                <button id="logoutBtn" class="btn-secondary" data-translate="logout">Выход</button>
             </div>
         </div>
 
         <div class="auth-section" id="authSection">
             <div class="auth-card">
-                <h2 data-lang="authTitle"></h2>
-                <p data-lang="authDescription"></p>
-                <button id="authBtn" class="btn-primary" data-lang="authButton"></button>
+                <h2 data-translate="authTitle">Авторизация</h2>
+                <p data-translate="authDescription">Войдите через Telegram для доступа к магазину</p>
+                <button id="authBtn" class="btn-primary" data-translate="authButton">Войти через Telegram</button>
             </div>
         </div>
 
-        <main class="main-content" id="mainContent" style="display: none;">
-            <!-- Хлебные крошки -->
-            <div class="breadcrumbs" id="breadcrumbs">
-                <a href="#" class="breadcrumb-item" data-lang="home"></a>
-                <span class="breadcrumb-separator">/</span>
-                <span class="breadcrumb-active" data-lang="catalog"></span>
-            </div>
-
-            <!-- Кнопка для админа -->
-            <div id="adminAddServiceContainer" style="display:none; margin-bottom:20px;">
-                <button id="adminAddServiceBtn" class="btn btn-accent" data-lang="addService"></button>
-            </div>
-
-            <!-- Поиск и фильтры -->
-            <div class="search-section">
+        <main class="main-content" id="mainContent">
+            <!-- Фильтры и поиск -->
+            <div class="filters-section">
                 <div class="search-container">
-                    <input type="text" id="searchInput" class="search-input" data-lang="searchPlaceholder" placeholder="">
-                    <div class="search-suggestions" id="searchSuggestions"></div>
+                    <input type="text" id="searchInput" placeholder="Поиск товаров..." class="search-input">
+                    <button id="refreshProducts" class="btn-refresh" title="Обновить товары">🔄</button>
                 </div>
-
-                <div class="filters">
+                
+                <div class="filters-container">
                     <div class="filter-group">
-                        <label class="filter-label" data-lang="filterPrice">Цена ($)</label>
-                        <div class="price-range">
-                            <input type="number" id="priceFrom" class="price-input" placeholder="От" min="0">
-                            <span class="price-separator">—</span>
-                            <input type="number" id="priceTo" class="price-input" placeholder="До" min="0">
+                        <label for="sortSelect">Сортировка:</label>
+                        <select id="sortSelect" class="filter-select">
+                            <option value="newest">Новые</option>
+                            <option value="price_asc">Дешевле</option>
+                            <option value="price_desc">Дороже</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="stockFilter">Наличие:</label>
+                        <select id="stockFilter" class="filter-select">
+                            <option value="">Все</option>
+                            <option value="available">В наличии</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group price-range">
+                        <label>Цена ($):</label>
+                        <div class="price-inputs">
+                            <input type="number" id="priceFrom" placeholder="От" min="0" class="price-input">
+                            <span>—</span>
+                            <input type="number" id="priceTo" placeholder="До" min="0" class="price-input">
                         </div>
                     </div>
-                
-                    <div class="filter-group">
-                        <label class="filter-label" data-lang="filterSort">Сортировка</label>
-                        <select id="sortFilter" class="filter-select">
-                            <option value="newest" data-lang="sortNewest">Новые</option>
-                            <option value="price-low" data-lang="sortPriceLow">Дешевле</option>
-                            <option value="price-high" data-lang="sortPriceHigh">Дороже</option>
-                        </select>
-                    </div>
-                
-                    <div class="filter-group">
-                        <label class="filter-label" data-lang="filterStock">Наличие</label>
-                        <select id="stockFilter" class="filter-select">
-                            <option value="" data-lang="stockAll">Все</option>
-                            <option value="in-stock" data-lang="stockIn">В наличии</option>
-                        </select>
-                    </div>
+                    
+                    <button id="resetFilters" class="btn-reset">Сбросить</button>
                 </div>
             </div>
 
-
-            <!-- Товары -->
-            <div class="products-grid" id="productsGrid">
-                <!-- Товары будут загружены динамически -->
-            </div>
-
-            <!-- Рекомендации -->
-            <div class="recommendations" id="recommendations" style="display: none;">
-                <h2 data-lang="recommendations"></h2>
-                <div class="products-grid" id="recommendationsGrid">
-                    <!-- Рекомендации будут загружены динамически -->
+            <!-- Сетка товаров -->
+            <div class="products-section">
+                <div class="products-header">
+                    <h2 data-translate="products">Товары</h2>
+                    <span id="productsCount" class="count-badge">0</span>
                 </div>
-            </div>
-
-
-            <!-- Заказы -->
-            <div class="orders-section" id="ordersSection" style="display: none;">
-                <h2 data-lang="myOrders"></h2>
-                <div class="orders-list" id="ordersList">
-                    <!-- Заказы будут загружены динамически -->
+                <div id="productsGrid" class="products-grid">
+                    <!-- Товары будут загружены динамически -->
                 </div>
             </div>
         </main>
 
-        <div class="loading" id="loading" style="display: none;">
+        <!-- Модальное окно отзывов -->
+        <div id="reviewModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h3>Оставить отзыв</h3>
+                <form id="reviewForm">
+                    <input type="hidden" id="reviewProductId" name="product_id">
+                    <input type="hidden" id="reviewOrderId" name="order_id">
+                    
+                    <div class="form-group">
+                        <label>Рейтинг:</label>
+                        <div id="ratingInput" class="rating-input">
+                            <span class="star" data-rating="1">☆</span>
+                            <span class="star" data-rating="2">☆</span>
+                            <span class="star" data-rating="3">☆</span>
+                            <span class="star" data-rating="4">☆</span>
+                            <span class="star" data-rating="5">☆</span>
+                        </div>
+                        <input type="hidden" id="ratingValue" name="rating" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="reviewComment">Комментарий:</label>
+                        <textarea id="reviewComment" name="comment" rows="4" placeholder="Расскажите о товаре..."></textarea>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Отправить отзыв</button>
+                        <button type="button" class="btn-secondary" onclick="document.getElementById('reviewModal').style.display='none'">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Модальное окно просмотра отзывов -->
+        <div id="reviewsModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h3>Отзывы о товаре</h3>
+                <div id="reviewsList" class="reviews-list">
+                    <!-- Отзывы будут загружены динамически -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Индикатор загрузки -->
+        <div id="loading" class="loading">
             <div class="spinner"></div>
             <p>Загрузка...</p>
         </div>
     </div>
 
-    <!-- Модальное окно для деталей товара -->
-    <div class="modal" id="productModal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <div class="product-details" id="productDetails">
-                <!-- Детали товара будут загружены динамически -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно для отзывов -->
-    <div class="modal" id="reviewsModal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2 data-lang="reviewsModalTitle"></h2>
-            <div class="reviews-container" id="reviewsContainer">
-                <!-- Отзывы будут загружены динамически -->
-            </div>
-            <div class="review-form" id="reviewForm" style="display: none;">
-                <h3 data-lang="leaveReviewTitle"></h3>
-                <form id="addReviewForm">
-                    <div class="rating-input">
-                        <label data-lang="yourRating"></label>
-                        <div class="stars-input">
-                            <span class="star" data-rating="1">★</span>
-                            <span class="star" data-rating="2">★</span>
-                            <span class="star" data-rating="3">★</span>
-                            <span class="star" data-rating="4">★</span>
-                            <span class="star" data-rating="5">★</span>
-                        </div>
-                    </div>
-                    <textarea data-lang="yourReviewPlaceholder" placeholder="Ваш отзыв..." required></textarea>
-                    <button type="submit" class="btn-primary" data-lang="sendReview">Отправить отзыв</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно для оформления заказа -->
-    <div class="modal" id="orderModal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2 data-lang="orderModalTitle"></h2>
-            <div class="order-form" id="orderForm">
-                <div class="order-summary">
-                    <h3 data-lang="orderSummaryTitle"></h3>
-                    <div id="orderSummary"></div>
-                </div>
-                <div class="payment-methods">
-                    <h3 data-lang="paymentMethodTitle"></h3>
-                    <div class="payment-options">
-                        <label class="payment-option">
-                            <input type="radio" name="payment" value="usdt-arbitrum" checked>
-                            <span>USDT (Arbitrum)</span>
-                        </label>
-                        <label class="payment-option">
-                            <input type="radio" name="payment" value="usdt-optimism">
-                            <span>USDT (Optimism)</span>
-                        </label>
-                    </div>
-                </div>
-                <div class="order-actions">
-                    <button class="btn-secondary" id="cancelOrder" data-lang="cancel">Отмена</button>
-                    <button class="btn-primary" id="confirmOrder" data-lang="confirmPayment">Оплатить</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- Модальное окно для добавления услуги -->
-    <div class="modal" id="addServiceModal">
-        <div class="modal-content">
-            <span class="close" id="closeAddServiceModal">&times;</span>
-            <h2>Добавить услугу</h2>
-            <form id="addServiceForm" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label>Название *</label>
-                    <input type="text" name="name" required>
-                </div>
-                <div class="form-group">
-                    <label>Описание</label>
-                    <textarea name="description" rows="3"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Категория</label>
-                    <select name="category">
-                        <option value="development">Разработка</option>
-                        <option value="consultation">Консультации</option>
-                        <option value="design">Дизайн</option>
-                        <option value="other">Другое</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>💰 Цены (заполните хотя бы одну)</label>
-                    <small style="color: #666; display: block; margin-bottom: 10px;">Минимум: 0.001 TON/USDT или 1 Star</small>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>💎 TON</label>
-                        <input type="number" name="price_ton" step="0.001" min="0" placeholder="0.001">
-                    </div>
-                    <div class="form-group">
-                        <label>💵 USDT</label>
-                        <input type="number" name="price_usdt" step="0.001" min="0" placeholder="0.001">
-                    </div>
-                    <div class="form-group">
-                        <label>⭐ Stars</label>
-                        <input type="number" name="price_stars" step="1" min="0" placeholder="1">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Цена (устаревшее поле, для совместимости)</label>
-                    <input type="number" name="price" step="0.01" value="1" readonly style="background: #f5f5f5;">
-                    <small style="color: #666;">Это поле заполняется автоматически на основе других цен</small>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Остаток</label>
-                        <input type="number" name="stock" min="0" value="0">
-                    </div>
-                    <div class="form-group checkbox-group">
-                        <label>
-                            <input type="checkbox" name="infinite_stock">
-                            Бесконечный остаток
-                        </label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Изображение</label>
-                    <input type="file" name="image" accept="image/*">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" id="cancelAddServiceBtn">Отмена</button>
-                    <button type="submit" class="btn-primary">Сохранить</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Модальное окно "Мои заказы" -->
-    <div class="modal" id="ordersModal">
-        <div class="modal-content modal-large">
-            <span class="close" id="closeOrdersModal">&times;</span>
-            <h2>📦 <span data-lang="myOrders">Мои заказы</span></h2>
-            <div id="ordersContainer" class="orders-container">
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                    <p data-lang="loading">Загрузка...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно оставить отзыв -->
-    <div class="modal" id="reviewModal">
-        <div class="modal-content">
-            <span class="close" id="closeReviewModal">&times;</span>
-            <h2>⭐ <span data-lang="leaveReview">Оставить отзыв</span></h2>
-            <form id="reviewForm">
-                <input type="hidden" id="reviewProductId">
-                <input type="hidden" id="reviewOrderId">
-                
-                <div class="form-group">
-                    <label data-lang="rating">Оценка</label>
-                    <div class="rating-input" id="ratingInput">
-                        <span class="star" data-rating="1">☆</span>
-                        <span class="star" data-rating="2">☆</span>
-                        <span class="star" data-rating="3">☆</span>
-                        <span class="star" data-rating="4">☆</span>
-                        <span class="star" data-rating="5">☆</span>
-                    </div>
-                    <input type="hidden" id="ratingValue" required>
-                </div>
-                
-                <div class="form-group">
-                    <label data-lang="reviewText">Ваш отзыв</label>
-                    <textarea id="reviewText" rows="4" required placeholder="Расскажите о вашем опыте..."></textarea>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" id="cancelReviewBtn" data-lang="cancel">Отмена</button>
-                    <button type="submit" class="btn-primary" data-lang="submit">Отправить</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Новая модульная архитектура -->
-    <script src="js/config.js?v=3.3.0"></script>
-    <script src="js/utils.js?v=3.3.0"></script>
-    <script src="js/products.js?v=3.3.0"></script>
-    <script src="js/payments.js?v=3.3.0"></script>
-    <script src="app_new.js?v=3.3.0"></script>
+    <!-- Подключение модулей -->
+    <script src="js/modules/config.js"></script>
+    <script src="js/modules/utils.js"></script>
+    <script src="js/modules/auth.js"></script>
+    <script src="js/modules/products.js"></script>
+    <script src="js/modules/interface.js"></script>
     
-    <!-- Старые модули (для совместимости) -->
-    <script src="payment.js?v=2.5.3"></script>
-    <script src="orders-manager.js?v=2.5.3"></script>
+    <!-- Главный файл приложения -->
+    <script src="app_clean.js"></script>
+    
+    <!-- Подключение дополнительных модулей для совместимости -->
+    <script src="orders-manager.js"></script>
 </body>
 </html>
