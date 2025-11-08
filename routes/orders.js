@@ -11,93 +11,108 @@ module.exports = (authMiddleware) => {
       const { product_id, quantity = 1, payment_method } = req.body;
       const user_id = req.user.id;
       
-      // ВАЛИДАЦИЯ ДАННЫХ
+      console.log('📦 [ORDER CREATE] Получены данные:', req.body);
+      console.log('📦 [ORDER CREATE] User ID:', user_id);
+
+      // ВАЛИДАЦИЯ
       if (!product_id) {
         return res.status(400).json({ error: 'Product ID is required' });
       }
-      
-      if (!user_id) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-      
-      console.log('[ORDER] Создание заказа:', { user_id, product_id, quantity, payment_method });
-      
-      // Проверяем существование товара
+
+      // Получаем товар
       const productResult = await db.query(
         'SELECT * FROM products WHERE id = $1 AND is_active = true',
         [product_id]
       );
-      
+
       if (productResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Product not found or inactive' });
+        return res.status(404).json({ error: 'Product not found' });
       }
-      
+
       const product = productResult.rows[0];
       
-      // Определяем сумму заказа в зависимости от способа оплаты
-      let amount = 0;
-      if (payment_method === 'ton' || payment_method === 'TON') {
-        amount = product.price_ton || product.price || 0;
-      } else if (payment_method === 'usdt' || payment_method === 'USDT') {
-        amount = product.price_usdt || product.price || 0;
-      } else if (payment_method === 'stars') {
-        amount = product.price_stars || 100;
-      } else {
-        amount = product.price || 0;
+      // Проверяем наличие товара
+      if (!product.infinite_stock && product.stock <= 0) {
+        return res.status(400).json({ error: 'Товар закончился' });
       }
       
+      // Определяем сумму
+      let amount;
+      switch (payment_method) {
+        case 'ton':
+          amount = product.price_ton;
+          break;
+        case 'usdt':
+          amount = product.price_usdt;
+          break;
+        case 'stars':
+          amount = product.price_stars;
+          break;
+        default:
+          amount = product.price_ton;
+      }
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ 
+          error: `Price for ${payment_method.toUpperCase()} is not set` 
+        });
+      }
+
       // ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ PAYLOAD
       const invoicePayload = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Создаём заказ с полными данными включая payload
-      const insertResult = await db.query(
-        `INSERT INTO orders (user_id, product_id, quantity, total_amount, status, payment_method, invoice_payload, created_at) 
-         VALUES ($1, $2, $3, $4, 'pending', $5, $6, NOW()) RETURNING *`,
-        [user_id, product_id, quantity, amount, payment_method || 'ton', invoicePayload]
+      console.log('🎯 Генерируем payload:', invoicePayload);
+
+      // СОЗДАЕМ ЗАКАЗ
+      const orderResult = await db.query(
+        `INSERT INTO orders 
+         (user_id, product_id, quantity, total_amount, status, payment_method, invoice_payload, created_at) 
+         VALUES ($1, $2, $3, $4, 'pending', $5, $6, NOW()) 
+         RETURNING *`,
+        [user_id, product_id, quantity, amount, payment_method, invoicePayload]
       );
-      const order = insertResult.rows[0];
-      
-      console.log('✅ [ORDER CREATE] Заказ создан:', order.id, 'Payload:', invoicePayload);
+
+      const order = orderResult.rows[0];
+      console.log('✅ [ORDER CREATE] Заказ создан:', {
+        id: order.id,
+        payload: order.invoice_payload,
+        amount: order.total_amount,
+        method: order.payment_method
+      });
       
       // Обрабатываем создание инвойса в зависимости от способа оплаты
       if (payment_method === 'ton' || payment_method === 'TON') {
         // Создаём TON инвойс
         const paymentService = req.app.get('paymentService');
-        const invoice = await paymentService.createCryptoInvoice(
-          order.id,
-          user_id,
-          product_id,
-          product.price_ton || product.price,
-          'TON'
-        );
-        
-        console.log('[ORDER] TON инвойс создан:', invoice.id);
-        
-        return res.json({
-          success: true,
-          orderId: order.id,
-          invoice: invoice,
-          url: invoice.url,
-          qr: invoice.qr,
-          address: invoice.address,
-          amount: invoice.amount
-        });
+        if (paymentService) {
+          const invoice = await paymentService.createCryptoInvoice(
+            order.id,
+            user_id,
+            product_id,
+            amount,
+            'TON'
+          );
+          
+          return res.json({
+            success: true,
+            order: order,
+            id: order.id,
+            invoice: invoice,
+            qr: invoice.qr,
+            address: invoice.address,
+            amount: invoice.amount
+          });
+        }
       }
       
-      // Для других способов оплаты просто возвращаем заказ
-      res.json({ 
-        success: true,
-        order: order,
-        id: order.id,
-        invoice_payload: invoicePayload, // Отправляем payload на фронтенд
-        message: 'Заказ создан успешно' 
-      });
-      
+      // Для других способов оплаты или если paymentService недоступен
+      res.json(order);
+
     } catch (error) {
-      console.error('❌ [ORDER CREATE] Ошибка:', error);
+      console.error('❌ [ORDER CREATE] Критическая ошибка:', error);
       res.status(500).json({ 
         error: 'Ошибка создания заказа',
-        details: error.message 
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
     }
   });
@@ -348,6 +363,33 @@ module.exports = (authMiddleware) => {
     } catch (error) {
       console.error('❌ [ORDER STATUS] Ошибка:', error);
       res.status(500).json({ error: 'Ошибка получения статуса заказа' });
+    }
+  });
+
+  // Expire заказа
+  router.post('/:id/expire', authMiddleware, async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      
+      console.log('⏰ [ORDER EXPIRE] Запрос для заказа:', orderId);
+      
+      const result = await db.query(
+        `UPDATE orders SET status = 'expired' 
+         WHERE id = $1 AND user_id = $2 AND status = 'pending'
+         RETURNING *`,
+        [orderId, req.user.id]
+      );
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Order not found or cannot be expired' });
+      }
+      
+      console.log('✅ [ORDER EXPIRE] Заказ истек:', orderId);
+      res.json({ message: 'Order expired', order: result.rows[0] });
+      
+    } catch (error) {
+      console.error('❌ [ORDER EXPIRE] Ошибка:', error);
+      res.status(500).json({ error: 'Ошибка отмены заказа' });
     }
   });
   

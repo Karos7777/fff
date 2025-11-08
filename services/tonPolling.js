@@ -62,13 +62,13 @@ module.exports = () => {
 
       for (const inv of pending) {
         const expected = parseFloat(inv.amount);
-        const payload = inv.invoice_payload;
+        let payload = inv.invoice_payload;
         const minAmount = expected * 0.9;
 
-        // Проверяем валидность payload
+        // Если payload null, генерируем его на основе ID заказа (fallback для старых заказов)
         if (!payload || payload === 'null' || payload === null) {
-          console.log(`❌ [TON POLLING] Invalid payload for order #${inv.order_id}: "${payload}"`);
-          continue;
+          payload = `order_${inv.order_id}`;
+          console.log(`🔄 [TON POLLING] Используем fallback payload для заказа #${inv.order_id}: "${payload}"`);
         }
 
         console.log(`[TON POLLING] Ищем для заказа #${inv.order_id}: payload: "${payload}" | сумма >= ${minAmount.toFixed(9)} TON`);
@@ -96,8 +96,8 @@ module.exports = () => {
           const receivedAmount = parseInt(tx.in_msg.value) / 1e9;
           const hash = tx.hash || 'unknown';
           
-          await db.run(`UPDATE invoices SET status = 'paid', transaction_hash = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2`, [hash, inv.id]);
-          await db.run(`UPDATE orders SET status = 'paid' WHERE id = $1`, [inv.order_id]);
+          await db.query(`UPDATE invoices SET status = 'paid', transaction_hash = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2`, [hash, inv.id]);
+          await db.query(`UPDATE orders SET status = 'paid' WHERE id = $1`, [inv.order_id]);
 
           console.log(`✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id} | payload: "${payload}" | сумма: ${receivedAmount.toFixed(9)} TON | hash: ${hash.slice(0, 16)}...`);
         } else {

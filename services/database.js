@@ -143,6 +143,18 @@ class DatabaseService {
                 }
             }
 
+            // Миграция: обновляем существующие заказы с null payload
+            try {
+                await this.dbLegacy.exec(`
+                    UPDATE orders 
+                    SET invoice_payload = 'order_' || id 
+                    WHERE invoice_payload IS NULL OR invoice_payload = 'null'
+                `);
+                console.log('✅ Миграция: обновлены payload для существующих заказов');
+            } catch (e) {
+                console.error('⚠️ Ошибка обновления payload:', e.message);
+            }
+
             // Таблица инвойсов (для платежей)
             await this.dbLegacy.exec(`
                 CREATE TABLE IF NOT EXISTS invoices (

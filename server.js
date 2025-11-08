@@ -216,6 +216,56 @@ app.post('/admin/fix-database', async (req, res) => {
     }
 });
 
+// Отладочный эндпоинт для проверки заказов
+app.get('/admin/debug-orders', async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT id, invoice_payload, total_amount, status, created_at, payment_method
+            FROM orders 
+            ORDER BY id DESC LIMIT 10
+        `);
+        
+        console.log('📊 Последние 10 заказов:');
+        result.rows.forEach(order => {
+            console.log(`   #${order.id}: payload="${order.invoice_payload}", amount=${order.total_amount}, status=${order.status}, method=${order.payment_method}`);
+        });
+        
+        res.json(result.rows);
+    } catch (error) {
+        console.error('❌ Debug error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Исправление payload для существующих заказов
+app.post('/admin/fix-payloads', async (req, res) => {
+    try {
+        console.log('🔧 Исправление payload для существующих заказов...');
+        
+        // Обновляем заказы с null payload
+        const result = await db.query(`
+            UPDATE orders 
+            SET invoice_payload = 'order_' || id || '_' || substr(md5(random()::text), 1, 8)
+            WHERE invoice_payload IS NULL OR invoice_payload = 'null'
+            RETURNING id, invoice_payload
+        `);
+        
+        console.log(`✅ Исправлено ${result.rows.length} заказов:`);
+        result.rows.forEach(row => {
+            console.log(`   #${row.id}: ${row.invoice_payload}`);
+        });
+        
+        res.json({ 
+            fixed: result.rows.length,
+            orders: result.rows 
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка исправления:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Главная страница
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
