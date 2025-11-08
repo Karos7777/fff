@@ -7,6 +7,55 @@ const Auth = {
         try {
             Utils.showLoading();
             
+            // Отладка Telegram Web App
+            console.log('🔍 [AUTH] Отладка Telegram Web App:');
+            console.log('🔍 [AUTH] - window.Telegram:', window.Telegram);
+            console.log('🔍 [AUTH] - WebApp:', window.Telegram?.WebApp);
+            console.log('🔍 [AUTH] - initData:', window.Telegram?.WebApp?.initData);
+            console.log('🔍 [AUTH] - initDataUnsafe:', window.Telegram?.WebApp?.initDataUnsafe);
+            
+            // Инициализируем Telegram Web App если доступен
+            if (window.Telegram?.WebApp) {
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+                console.log('✅ [AUTH] Telegram WebApp инициализирован');
+            }
+            
+            // Проверяем различные способы получения данных пользователя
+            let telegramUser = null;
+            
+            // Способ 1: через initDataUnsafe
+            if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
+                telegramUser = window.Telegram.WebApp.initDataUnsafe.user;
+                console.log('✅ [AUTH] Пользователь найден через initDataUnsafe:', telegramUser);
+            }
+            
+            // Способ 2: парсинг initData
+            if (!telegramUser && window.Telegram?.WebApp?.initData) {
+                try {
+                    const initData = window.Telegram.WebApp.initData;
+                    const urlParams = new URLSearchParams(initData);
+                    const userParam = urlParams.get('user');
+                    if (userParam) {
+                        telegramUser = JSON.parse(decodeURIComponent(userParam));
+                        console.log('✅ [AUTH] Пользователь найден через парсинг initData:', telegramUser);
+                    }
+                } catch (e) {
+                    console.log('⚠️ [AUTH] Ошибка парсинга initData:', e);
+                }
+            }
+            
+            // Если есть данные пользователя Telegram, авторизуемся
+            if (telegramUser) {
+                console.log('🔐 [AUTH] Авторизация через Telegram WebApp API...');
+                const authResult = await this.authenticateWithTelegram();
+                if (authResult) {
+                    console.log('✅ [AUTH] Авторизация через Telegram успешна');
+                    Utils.hideLoading();
+                    return true;
+                }
+            }
+            
             // Проверяем, есть ли сохраненный токен
             const token = localStorage.getItem(CONFIG.CACHE_KEYS.AUTH_TOKEN);
             console.log('🔐 [AUTH] Проверка сохраненного токена:', token ? 'найден' : 'отсутствует');
@@ -21,35 +70,33 @@ const Auth = {
                 }
             }
             
-            // Если токена нет или он невалидный, пытаемся авторизоваться через Telegram
-            console.log('🔐 [AUTH] Попытка авторизации через Telegram WebApp...');
+            // Если ничего не сработало
+            console.log('⚠️ [AUTH] Не удалось получить данные пользователя');
             
-            if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
-                const user = window.Telegram.WebApp.initDataUnsafe.user;
-                console.log('👤 [AUTH] Данные пользователя из Telegram:', user);
-                
-                const authResult = await this.authenticateUser(user.id, user.username, user.first_name, user.last_name);
-                if (authResult) {
-                    console.log('✅ [AUTH] Авторизация через Telegram успешна');
-                    Utils.hideLoading();
-                    return true;
+            // В Telegram WebApp не показываем кнопку входа, просто ждем
+            if (window.Telegram?.WebApp) {
+                console.log('📱 [AUTH] Telegram WebApp режим - ожидание данных пользователя...');
+                Utils.hideLoading();
+                // Показываем сообщение о загрузке вместо формы авторизации
+                const authSection = document.getElementById('authSection');
+                if (authSection) {
+                    authSection.innerHTML = `
+                        <div class="auth-card">
+                            <h2>Загрузка...</h2>
+                            <p>Получение данных пользователя из Telegram</p>
+                            <div class="spinner"></div>
+                        </div>
+                    `;
+                    authSection.style.display = 'flex';
                 }
+                return false;
             } else {
-                console.log('⚠️ [AUTH] Telegram WebApp недоступен или пользователь не авторизован');
-                
                 // Для тестирования в браузере - показываем форму авторизации
-                if (!window.Telegram) {
-                    console.log('🧪 [AUTH] Режим тестирования - показываем форму авторизации');
-                    Utils.showAuthSection();
-                    Utils.hideLoading();
-                    return false;
-                }
+                console.log('🧪 [AUTH] Режим тестирования - показываем форму авторизации');
+                Utils.showAuthSection();
+                Utils.hideLoading();
+                return false;
             }
-            
-            console.log('❌ [AUTH] Автоматическая авторизация не удалась');
-            Utils.showAuthSection();
-            Utils.hideLoading();
-            return false;
             
         } catch (error) {
             console.error('❌ [AUTH] Ошибка автоматической авторизации:', error);

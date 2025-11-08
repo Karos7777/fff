@@ -91,6 +91,16 @@ document.addEventListener('DOMContentLoaded', async function() {
             
             // Обновляем счетчики
             Interface.updateCounters();
+        } else {
+            console.log('⚠️ [APP] Пользователь не авторизован');
+            
+            // В Telegram WebApp скрываем кнопку входа
+            if (window.Telegram?.WebApp) {
+                const authBtn = document.getElementById('authBtn');
+                if (authBtn) {
+                    authBtn.style.display = 'none';
+                }
+            }
         }
         
         console.log('✅ [APP] Приложение инициализировано успешно');
