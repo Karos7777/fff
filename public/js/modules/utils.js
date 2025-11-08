@@ -158,20 +158,158 @@ const Utils = {
     
     // Показать элементы управления для администратора
     showAdminControls() {
-        // Создаем кнопку админ-панели если её нет
-        const userActions = document.querySelector('.user-actions');
-        if (userActions && !document.getElementById('adminPanelBtn')) {
-            const adminBtn = document.createElement('button');
-            adminBtn.id = 'adminPanelBtn';
-            adminBtn.className = 'btn-admin';
-            adminBtn.innerHTML = '<span class="icon">⚙️</span><span>Админ-панель</span>';
-            adminBtn.addEventListener('click', () => {
-                window.open('/admin-panel.html', '_blank');
-            });
+        console.log('⚙️ [ADMIN] Показ админ-функций в интерфейсе');
+        
+        // Показываем админ-секцию в основном интерфейсе
+        this.showAdminSection();
+        
+        // Добавляем админ-функции к товарам
+        this.addAdminProductControls();
+    },
+
+    // Показать админ-секцию в интерфейсе
+    showAdminSection() {
+        // Создаем админ-секцию если её нет
+        let adminSection = document.getElementById('adminSection');
+        if (!adminSection) {
+            adminSection = document.createElement('div');
+            adminSection.id = 'adminSection';
+            adminSection.className = 'admin-section';
+            adminSection.innerHTML = `
+                <div class="admin-header">
+                    <h3>⚙️ Панель администратора</h3>
+                    <button id="toggleAdminPanel" class="btn-toggle">Свернуть</button>
+                </div>
+                <div class="admin-content" id="adminContent">
+                    <div class="admin-actions">
+                        <button id="addProductBtn" class="btn-admin-action">
+                            <span class="icon">➕</span>
+                            <span>Добавить товар</span>
+                        </button>
+                        <button id="viewOrdersBtn" class="btn-admin-action">
+                            <span class="icon">📦</span>
+                            <span>Все заказы</span>
+                        </button>
+                        <button id="viewUsersBtn" class="btn-admin-action">
+                            <span class="icon">👥</span>
+                            <span>Пользователи</span>
+                        </button>
+                    </div>
+                </div>
+            `;
             
-            // Вставляем перед кнопкой выхода
-            const logoutBtn = document.getElementById('logoutBtn');
-            userActions.insertBefore(adminBtn, logoutBtn);
+            // Вставляем после заголовка
+            const header = document.querySelector('.header');
+            if (header) {
+                header.insertAdjacentElement('afterend', adminSection);
+            }
+            
+            // Добавляем обработчики
+            this.setupAdminHandlers();
+        }
+        
+        adminSection.style.display = 'block';
+    },
+
+    // Настройка обработчиков админ-панели
+    setupAdminHandlers() {
+        // Кнопка сворачивания/разворачивания
+        const toggleBtn = document.getElementById('toggleAdminPanel');
+        const adminContent = document.getElementById('adminContent');
+        
+        if (toggleBtn && adminContent) {
+            toggleBtn.addEventListener('click', () => {
+                const isVisible = adminContent.style.display !== 'none';
+                adminContent.style.display = isVisible ? 'none' : 'block';
+                toggleBtn.textContent = isVisible ? 'Развернуть' : 'Свернуть';
+            });
+        }
+
+        // Кнопка добавления товара
+        const addProductBtn = document.getElementById('addProductBtn');
+        if (addProductBtn) {
+            addProductBtn.addEventListener('click', () => {
+                this.showAddProductModal();
+            });
+        }
+
+        // Кнопка просмотра заказов
+        const viewOrdersBtn = document.getElementById('viewOrdersBtn');
+        if (viewOrdersBtn) {
+            viewOrdersBtn.addEventListener('click', () => {
+                this.showAllOrdersModal();
+            });
+        }
+
+        // Кнопка просмотра пользователей
+        const viewUsersBtn = document.getElementById('viewUsersBtn');
+        if (viewUsersBtn) {
+            viewUsersBtn.addEventListener('click', () => {
+                this.showUsersModal();
+            });
+        }
+    },
+
+    // Добавить админ-контролы к товарам
+    addAdminProductControls() {
+        // Добавляем кнопки редактирования/удаления к каждому товару
+        const productCards = document.querySelectorAll('.product-card');
+        productCards.forEach(card => {
+            if (!card.querySelector('.admin-controls')) {
+                const adminControls = document.createElement('div');
+                adminControls.className = 'admin-controls';
+                adminControls.innerHTML = `
+                    <button class="btn-edit-product" title="Редактировать">✏️</button>
+                    <button class="btn-delete-product" title="Удалить">🗑️</button>
+                `;
+                card.appendChild(adminControls);
+                
+                // Добавляем обработчики
+                const editBtn = adminControls.querySelector('.btn-edit-product');
+                const deleteBtn = adminControls.querySelector('.btn-delete-product');
+                const productId = card.dataset.productId;
+                
+                if (editBtn && productId) {
+                    editBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.editProduct(productId);
+                    });
+                }
+                
+                if (deleteBtn && productId) {
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.deleteProduct(productId);
+                    });
+                }
+            }
+        });
+    },
+
+    // Показать модальное окно добавления товара
+    showAddProductModal() {
+        alert('Функция добавления товара будет реализована');
+    },
+
+    // Показать модальное окно всех заказов
+    showAllOrdersModal() {
+        alert('Функция просмотра всех заказов будет реализована');
+    },
+
+    // Показать модальное окно пользователей
+    showUsersModal() {
+        alert('Функция просмотра пользователей будет реализована');
+    },
+
+    // Редактировать товар
+    editProduct(productId) {
+        alert(`Редактирование товара ${productId} будет реализовано`);
+    },
+
+    // Удалить товар
+    deleteProduct(productId) {
+        if (confirm('Вы уверены, что хотите удалить этот товар?')) {
+            alert(`Удаление товара ${productId} будет реализовано`);
         }
     },
 

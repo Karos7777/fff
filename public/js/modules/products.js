@@ -70,6 +70,11 @@ const Products = {
 
         productsGrid.innerHTML = products.map(product => this.createProductCard(product)).join('');
         
+        // Добавляем админ-контролы если пользователь админ
+        if (window.currentUser && window.currentUser.is_admin && typeof Utils !== 'undefined') {
+            Utils.addAdminProductControls();
+        }
+        
         console.log('✅ [DISPLAY] Товары отображены успешно');
     },
 
