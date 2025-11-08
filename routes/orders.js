@@ -306,6 +306,46 @@ module.exports = (authMiddleware) => {
       res.status(500).json({ error: 'Server error' });
     }
   });
+
+  // Статус заказа
+  router.get('/:id/status', authMiddleware, async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      
+      if (!orderId || orderId === 'undefined') {
+        return res.status(400).json({ error: 'Invalid order ID' });
+      }
+      
+      console.log('📊 [ORDER STATUS] Проверка статуса заказа:', orderId);
+      
+      const orderResult = await db.query(`
+        SELECT id, status, paid_at, transaction_hash, created_at, total_amount, payment_method
+        FROM orders 
+        WHERE id = $1 AND user_id = $2
+      `, [orderId, req.user.id]);
+      
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      
+      const order = orderResult.rows[0];
+      console.log('✅ [ORDER STATUS] Статус найден:', order.status);
+      
+      res.json({
+        id: order.id,
+        status: order.status,
+        paid_at: order.paid_at,
+        transaction_hash: order.transaction_hash,
+        created_at: order.created_at,
+        total_amount: order.total_amount,
+        payment_method: order.payment_method
+      });
+      
+    } catch (error) {
+      console.error('❌ [ORDER STATUS] Ошибка:', error);
+      res.status(500).json({ error: 'Ошибка получения статуса заказа' });
+    }
+  });
   
   return router;
 };

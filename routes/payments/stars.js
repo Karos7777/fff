@@ -149,14 +149,20 @@ router.post('/create-invoice', authMiddlewareWithDB, async (req, res) => {
                 payload: payload
             });
         } else {
-            throw new Error(invoiceData.description || 'Ошибка создания инвойса');
+            console.error('❌ [STARS INVOICE] Telegram API error:', invoiceData);
+            return res.status(400).json({ 
+                success: false,
+                error: 'Failed to create Stars invoice',
+                details: invoiceData.description || 'Unknown Telegram API error'
+            });
         }
         
     } catch (error) {
         console.error('❌ [CREATE-STARS] Ошибка создания Stars инвойса:', error);
         res.status(500).json({ 
             success: false,
-            error: 'Ошибка создания платежа: ' + error.message
+            error: 'Ошибка создания платежа Stars',
+            details: error.message
         });
     }
 });

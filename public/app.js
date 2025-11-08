@@ -22,6 +22,12 @@ window.addEventListener('unhandledrejection', function(e) {
   window.fetch = async function(...args) {
     const [resource, config = {}] = args;
     
+    // Блокируем запросы к undefined
+    if (typeof resource === 'string' && resource.includes('undefined')) {
+      console.error('🚫 [FETCH] Blocked undefined URL:', resource);
+      return Promise.reject(new Error('Invalid URL: contains undefined'));
+    }
+    
     // Добавляем токен в заголовки, если он есть
     const token = localStorage.getItem('authToken');
     if (token && !config.headers?.Authorization) {
@@ -1550,15 +1556,25 @@ async function payWithStars(productId) {
         const orderData = await orderResponse.json();
         
         // Теперь создаем инвойс для Stars
-        const invoiceResponse = await fetch('/api/create-stars-invoice', {
+        const orderId = orderData.id || orderData.order?.id || orderData.orderId;
+        if (!orderId) {
+            throw new Error('Order ID not found in response');
+        }
+        
+        console.log('💎 [STARS] Создание инвойса для заказа:', orderId);
+        
+        const invoiceResponse = await fetch('/api/payments/stars/create-invoice', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('authToken')}`
             },
             body: JSON.stringify({
-                orderId: orderData.order?.id || orderData.orderId,
-                productId: productId
+                order_id: orderId,
+                orderId: orderId, // поддержка старого формата
+                productId: productId,
+                amount: product.price_stars,
+                description: `Payment for ${product.name}`
             })
         });
         
@@ -1647,6 +1663,87 @@ async function payWithUSDT(productId) {
     }
 }
 
+// Проверка статуса заказа
+async function checkOrderStatus(orderId) {
+    if (!orderId || orderId === 'undefined') {
+        console.error('❌ [ORDER STATUS] Invalid order ID:', orderId);
+        return null;
+    }
+    
+    try {
+        console.log('📊 [ORDER STATUS] Проверка статуса заказа:', orderId);
+        
+        const response = await fetch(`/api/orders/${orderId}/status`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+        
+        if (!response.ok) {
+            console.error('❌ [ORDER STATUS] HTTP error:', response.status);
+            return null;
+        }
+        
+        const orderStatus = await response.json();
+        console.log('✅ [ORDER STATUS] Статус получен:', orderStatus);
+        return orderStatus;
+        
+    } catch (error) {
+        console.error('❌ [ORDER STATUS] Ошибка проверки статуса:', error);
+        return null;
+    }
+}
+
+// Функция для обработки платежей с валидацией
+async function processPayment(orderId, paymentMethod) {
+    try {
+        if (!orderId || orderId === 'undefined') {
+            throw new Error('Invalid order ID for payment processing');
+        }
+        
+        console.log('💰 [PAYMENT] Processing payment:', { orderId, paymentMethod });
+        
+        switch (paymentMethod) {
+            case 'stars':
+                // Stars payment уже обрабатывается в payWithStars
+                break;
+            case 'ton':
+                // TON payment logic
+                return { type: 'ton', orderId: orderId };
+            case 'usdt':
+                // USDT payment logic  
+                return { type: 'usdt', orderId: orderId };
+            default:
+                throw new Error(`Unknown payment method: ${paymentMethod}`);
+        }
+    } catch (error) {
+        console.error('❌ [PAYMENT] Processing error:', error);
+        throw error;
+    }
+}
+
+// Проверка доступности Stars оплаты
+function isStarsPaymentAvailable() {
+    // Проверяем наличие Telegram WebApp API
+    if (!window.Telegram?.WebApp) {
+        console.log('⚠️ [STARS] Telegram WebApp недоступен');
+        return false;
+    }
+    
+    // Проверяем наличие методов для оплаты
+    if (!window.Telegram.WebApp.openInvoice && !window.Telegram.WebApp.openTelegramLink) {
+        console.log('⚠️ [STARS] Методы оплаты недоступны');
+        return false;
+    }
+    
+    // Временно отключаем Stars до настройки STARS_PROVIDER_TOKEN
+    // TODO: Убрать это после настройки Stars на сервере
+    console.log('⚠️ [STARS] Stars оплата временно отключена (не настроен STARS_PROVIDER_TOKEN)');
+    return false;
+    
+    // return true; // Раскомментировать после настройки
+}
+
 // Получение названия категории
 function getCategoryName(category) {
     const categories = {
@@ -1732,7 +1829,7 @@ async function viewProduct(productId) {
                                 💵 ${product.price_usdt.toFixed(2)} USDT
                             </button>
                         ` : ''}
-                        ${product.price_stars && product.price_stars > 0 ? `
+                        ${product.price_stars && product.price_stars > 0 && isStarsPaymentAvailable() ? `
                             <button class="btn-payment btn-stars" onclick="payWithStars(${product.id})">
                                 ⭐ ${product.price_stars} Stars
                             </button>
