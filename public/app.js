@@ -1,5 +1,46 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '3.5.1';
+const APP_VERSION = '3.5.2';
+
+// Инициализация перехватчика для автоматического добавления токенов
+(function initAuthInterceptor() {
+  console.log('🔧 [AUTH] Инициализация перехватчика аутентификации');
+  
+  const originalFetch = window.fetch;
+  
+  window.fetch = async function(...args) {
+    const [resource, config = {}] = args;
+    
+    // Добавляем токен в заголовки, если он есть
+    const token = localStorage.getItem('authToken');
+    if (token && !config.headers?.Authorization) {
+      config.headers = {
+        ...config.headers,
+        'Authorization': `Bearer ${token}`
+      };
+    }
+
+    const response = await originalFetch(resource, config);
+
+    // Если токен недействителен, очищаем его
+    if (response.status === 401) {
+      console.log('🔄 [AUTH] Токен недействителен, требуется переаутентификация');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('currentUser');
+      
+      // В Telegram WebApp пытаемся переаутентифицироваться
+      if (window.Telegram?.WebApp) {
+        console.log('📱 [AUTH] Попытка автоматической переаутентификации в Telegram');
+        setTimeout(() => {
+          if (typeof autoAuth === 'function') {
+            autoAuth();
+          }
+        }, 1000);
+      }
+    }
+
+    return response;
+  };
+})();
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
