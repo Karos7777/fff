@@ -87,9 +87,28 @@ const generateToken = (user) => {
   return token;
 };
 
+// Middleware для проверки админских прав
+const adminMiddleware = async (req, res, next) => {
+  try {
+    // Сначала проверяем авторизацию
+    await authMiddlewareWithDB(req, res, () => {});
+    
+    // Проверяем админские права
+    if (!req.user || !req.user.is_admin) {
+      return res.status(403).json({ error: 'Доступ запрещен. Требуются права администратора.' });
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Ошибка в adminMiddleware:', error);
+    return res.status(401).json({ error: 'Ошибка авторизации' });
+  }
+};
+
 module.exports = {
   authMiddleware,
   authMiddlewareWithDB,
+  adminMiddleware,
   generateToken,
   JWT_SECRET
 };
