@@ -101,7 +101,7 @@ function renderOrderCard(order) {
     const statusClass = order.status.toLowerCase();
     const statusText = getStatusText(order.status);
     const canCancel = ['pending', 'pending_crypto'].includes(order.status);
-    const canReview = order.status === 'completed' && !order.has_review;
+    const canReview = order.status === 'paid' && !order.has_review;
     const canPayAgain = ['cancelled', 'expired'].includes(order.status);
     
     // Вычисляем оставшееся время
@@ -128,7 +128,7 @@ function renderOrderCard(order) {
                 </div>
                 <div class="order-detail-item">
                     <div class="order-detail-label">Способ оплаты</div>
-                    <div class="order-detail-value">${getPaymentMethodText(order.payment_method)}</div>
+                    <div class="order-detail-value">${getPaymentMethodText(order.payment_currency || order.payment_method)}</div>
                 </div>
                 ${order.transaction_hash ? `
                 <div class="order-detail-item">
@@ -296,11 +296,16 @@ async function cancelOrder(orderId) {
         return;
     }
     
+    // Оптимистичное обновление - сразу скрываем заказ
+    const orderElement = document.querySelector(`[data-order-id="${orderId}"]`);
+    if (orderElement) {
+        orderElement.style.opacity = '0.5';
+        orderElement.style.pointerEvents = 'none';
+    }
+    
     try {
-        showLoading();
-        
         const token = localStorage.getItem('authToken');
-        const response = await fetch(`/api/orders/${orderId}/cancel`, {
+        const response = await fetch(`/api/orders/${orderId}/expire`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -313,17 +318,39 @@ async function cancelOrder(orderId) {
         }
         
         console.log('✅ [ORDERS] Заказ отменён');
-        showSuccess('Заказ успешно отменён');
         
-        // Перезагружаем заказы
-        await loadOrders();
-        renderOrders();
+        // Удаляем элемент из DOM
+        if (orderElement) {
+            orderElement.remove();
+        }
+        
+        // Обновляем массив заказов
+        if (window.orders) {
+            window.orders = window.orders.filter(order => order.id !== orderId);
+        }
+        
+        // Если заказов не осталось, показываем пустое состояние
+        if (!window.orders || window.orders.length === 0) {
+            const container = document.getElementById('ordersContainer');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📦</div>
+                    <div class="empty-state-title">У вас пока нет заказов</div>
+                    <div class="empty-state-text">Начните делать покупки!</div>
+                </div>
+            `;
+        }
         
     } catch (error) {
         console.error('❌ [ORDERS] Ошибка отмены:', error);
+        
+        // Восстанавливаем элемент при ошибке
+        if (orderElement) {
+            orderElement.style.opacity = '1';
+            orderElement.style.pointerEvents = 'auto';
+        }
+        
         showError(error.message);
-    } finally {
-        hideLoading();
     }
 }
 
@@ -374,7 +401,7 @@ async function handleReviewSubmit(e) {
                 product_id: productId,
                 order_id: orderId,
                 rating: parseInt(rating),
-                text: text
+                comment: text
             })
         });
         
@@ -420,11 +447,21 @@ function getStatusText(status) {
 }
 
 function getPaymentMethodText(method) {
+    if (!method || method === 'null') {
+        return 'USD';
+    }
+    
     const methodMap = {
+        'TON': 'TON',
         'ton': 'TON',
-        'stars': 'Telegram Stars',
-        'usdt_arbitrum': 'USDT (Arbitrum)',
-        'usdt_optimism': 'USDT (Optimism)'
+        'USDT': 'USDT',
+        'usdt': 'USDT',
+        'Stars': 'Stars',
+        'stars': 'Stars',
+        'XTR': 'Stars',
+        'USD': 'USD',
+        'usdt_arbitrum': 'USDT',
+        'usdt_optimism': 'USDT'
     };
     return methodMap[method] || method;
 }
@@ -475,9 +512,14 @@ async function deleteOrder(orderId) {
         return;
     }
     
+    // Оптимистичное обновление - сразу скрываем заказ
+    const orderElement = document.querySelector(`[data-order-id="${orderId}"]`);
+    if (orderElement) {
+        orderElement.style.opacity = '0.5';
+        orderElement.style.pointerEvents = 'none';
+    }
+    
     try {
-        showLoading();
-        
         const token = localStorage.getItem('authToken');
         const response = await fetch(`/api/orders/${orderId}`, {
             method: 'DELETE',
@@ -492,17 +534,39 @@ async function deleteOrder(orderId) {
         }
         
         console.log('✅ [ORDERS] Заказ удалён');
-        showSuccess('Заказ успешно удалён из истории');
         
-        // Перезагружаем заказы
-        await loadOrders();
-        renderOrders();
+        // Удаляем элемент из DOM
+        if (orderElement) {
+            orderElement.remove();
+        }
+        
+        // Обновляем массив заказов
+        if (window.orders) {
+            window.orders = window.orders.filter(order => order.id !== orderId);
+        }
+        
+        // Если заказов не осталось, показываем пустое состояние
+        if (!window.orders || window.orders.length === 0) {
+            const container = document.getElementById('ordersContainer');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📦</div>
+                    <div class="empty-state-title">У вас пока нет заказов</div>
+                    <div class="empty-state-text">Начните делать покупки!</div>
+                </div>
+            `;
+        }
         
     } catch (error) {
         console.error('❌ [ORDERS] Ошибка удаления:', error);
+        
+        // Восстанавливаем элемент при ошибке
+        if (orderElement) {
+            orderElement.style.opacity = '1';
+            orderElement.style.pointerEvents = 'auto';
+        }
+        
         showError(error.message);
-    } finally {
-        hideLoading();
     }
 }
 

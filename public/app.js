@@ -1,5 +1,5 @@
 // Версия приложения (обновляйте при каждом изменении)
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.7.0';
 
 // Проверка версии и очистка кеша при обновлении
 (function checkVersion() {
@@ -550,23 +550,6 @@ function setupEventListeners() {
 
     // Модальные окна
     setupModalListeners();
-
-    // Чат поддержки
-    const supportToggle = document.getElementById('supportToggle');
-    const supportClose = document.getElementById('supportClose');
-    const supportPanel = document.getElementById('supportPanel');
-
-    if (supportToggle) {
-        supportToggle.addEventListener('click', function() {
-            supportPanel.style.display = supportPanel.style.display === 'none' ? 'block' : 'none';
-        });
-    }
-
-    if (supportClose) {
-        supportClose.addEventListener('click', function() {
-            supportPanel.style.display = 'none';
-        });
-    }
 
     // Админ: обработчики для добавления услуги
     const adminAddServiceBtn = document.getElementById('adminAddServiceBtn');
@@ -1394,6 +1377,106 @@ function showError(message) {
 
 function showSuccess(message) {
   alert('✅ ' + message);
+}
+
+// Показать отзывы товара
+async function showReviews(productId) {
+  try {
+    showLoading();
+    
+    const response = await fetch(`/api/products/${productId}/reviews`);
+    if (!response.ok) {
+      throw new Error('Ошибка загрузки отзывов');
+    }
+    
+    const reviews = await response.json();
+    
+    const reviewsModal = document.getElementById('reviewsModal');
+    const reviewsContainer = document.getElementById('reviewsContainer');
+    
+    if (reviews.length === 0) {
+      reviewsContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⭐</div>
+          <div class="empty-state-title">Пока нет отзывов</div>
+          <div class="empty-state-text">Станьте первым, кто оставит отзыв!</div>
+        </div>
+      `;
+    } else {
+      reviewsContainer.innerHTML = reviews.map(review => `
+        <div class="review-item">
+          <div class="review-header">
+            <div class="review-author">${review.author_name}</div>
+            <div class="review-rating">
+              ${generateStars(review.rating)}
+            </div>
+            <div class="review-date">${formatDate(review.created_at)}</div>
+          </div>
+          ${review.comment ? `
+            <div class="review-comment">${review.comment}</div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+    
+    reviewsModal.style.display = 'block';
+    
+  } catch (error) {
+    console.error('Ошибка загрузки отзывов:', error);
+    showError('Ошибка загрузки отзывов');
+  } finally {
+    hideLoading();
+  }
+}
+
+// Генерация звёзд для рейтинга
+function generateStars(rating) {
+  const fullStars = Math.floor(rating);
+  const hasHalfStar = rating % 1 >= 0.5;
+  const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+  
+  return '★'.repeat(fullStars) + 
+         (hasHalfStar ? '☆' : '') + 
+         '☆'.repeat(emptyStars);
+}
+
+// Форматирование даты
+function formatDate(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = now - date;
+  
+  // Если меньше минуты
+  if (diff < 60000) {
+    return 'Только что';
+  }
+  
+  // Если меньше часа
+  if (diff < 3600000) {
+    const minutes = Math.floor(diff / 60000);
+    return `${minutes} ${minutes === 1 ? 'минуту' : minutes < 5 ? 'минуты' : 'минут'} назад`;
+  }
+  
+  // Если сегодня
+  if (date.toDateString() === now.toDateString()) {
+    return `Сегодня в ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  
+  // Если вчера
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `Вчера в ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  
+  // Иначе полная дата
+  return date.toLocaleDateString('ru-RU', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function showLoading() {

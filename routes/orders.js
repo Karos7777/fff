@@ -69,6 +69,25 @@ module.exports = (authMiddleware) => {
     try {
       const userId = req.user.id;
       
+      // Сначала удаляем истёкшие заказы (старше 1 часа)
+      const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      await db.query(`
+        DELETE FROM invoices WHERE order_id IN (
+          SELECT id FROM orders 
+          WHERE user_id = $1 
+          AND status IN ('pending', 'pending_crypto') 
+          AND created_at < $2
+        )
+      `, [userId, hourAgo.toISOString()]);
+      
+      await db.query(`
+        DELETE FROM orders 
+        WHERE user_id = $1 
+        AND status IN ('pending', 'pending_crypto') 
+        AND created_at < $2
+      `, [userId, hourAgo.toISOString()]);
+      
+      // Получаем актуальные заказы
       const result = await db.query(`
         SELECT 
           o.id,
@@ -82,10 +101,22 @@ module.exports = (authMiddleware) => {
           p.price_ton,
           p.image_url,
           p.file_path,
-          i.currency as payment_currency
+          COALESCE(i.currency, 
+            CASE 
+              WHEN o.payment_method = 'ton' THEN 'TON'
+              WHEN o.payment_method = 'usdt' THEN 'USDT'
+              WHEN o.payment_method = 'stars' THEN 'Stars'
+              WHEN i.currency = 'XTR' THEN 'Stars'
+              WHEN i.currency = 'TON' THEN 'TON'
+              WHEN i.currency = 'USDT' THEN 'USDT'
+              ELSE 'USD'
+            END
+          ) as payment_currency,
+          CASE WHEN r.id IS NOT NULL THEN true ELSE false END as has_review
         FROM orders o
         JOIN products p ON o.product_id = p.id
         LEFT JOIN invoices i ON o.id = i.order_id
+        LEFT JOIN reviews r ON o.product_id = r.product_id AND o.user_id = r.user_id
         WHERE o.user_id = $1
         ORDER BY o.created_at DESC
       `, [userId]);

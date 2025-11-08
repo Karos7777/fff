@@ -954,6 +954,95 @@ app.post('/api/payments/stars/webhook', async (req, res) => {
   }
 });
 
+// Эндпоинт для добавления отзыва
+app.post('/api/reviews', authMiddlewareWithDB, async (req, res) => {
+  try {
+    const { product_id, order_id, rating, comment } = req.body;
+    const userId = req.user.id;
+    
+    console.log('⭐ [REVIEW] Добавление отзыва:', { userId, product_id, order_id, rating });
+    
+    if (!product_id || !rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Необходимы product_id и rating (1-5)' });
+    }
+    
+    // Проверяем, что заказ существует и принадлежит пользователю
+    if (order_id) {
+      const orderResult = await db.query(
+        'SELECT * FROM orders WHERE id = $1 AND user_id = $2 AND product_id = $3 AND status = $4', 
+        [order_id, userId, product_id, 'paid']
+      );
+      
+      if (orderResult.rows.length === 0) {
+        return res.status(400).json({ error: 'Заказ не найден или не оплачен' });
+      }
+    }
+    
+    // Проверяем, что пользователь еще не оставлял отзыв на этот товар
+    const existingReview = await db.query(
+      'SELECT id FROM reviews WHERE user_id = $1 AND product_id = $2',
+      [userId, product_id]
+    );
+    
+    if (existingReview.rows.length > 0) {
+      return res.status(400).json({ error: 'Вы уже оставили отзыв на этот товар' });
+    }
+    
+    // Добавляем отзыв
+    const reviewResult = await db.query(`
+      INSERT INTO reviews (user_id, product_id, order_id, rating, comment, created_at) 
+      VALUES ($1, $2, $3, $4, $5, NOW()) 
+      RETURNING *
+    `, [userId, product_id, order_id, rating, comment || null]);
+    
+    const review = reviewResult.rows[0];
+    
+    console.log('✅ [REVIEW] Отзыв добавлен:', review.id);
+    
+    res.json({
+      success: true,
+      review: review
+    });
+    
+  } catch (error) {
+    console.error('❌ [REVIEW] Ошибка добавления отзыва:', error);
+    res.status(500).json({ error: 'Ошибка добавления отзыва: ' + error.message });
+  }
+});
+
+// Эндпоинт для получения отзывов товара
+app.get('/api/products/:id/reviews', async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    
+    const reviewsResult = await db.query(`
+      SELECT 
+        r.id,
+        r.rating,
+        r.comment,
+        r.created_at,
+        u.username,
+        u.first_name,
+        u.last_name
+      FROM reviews r
+      JOIN users u ON r.user_id = u.id
+      WHERE r.product_id = $1
+      ORDER BY r.created_at DESC
+    `, [productId]);
+    
+    const reviews = reviewsResult.rows.map(review => ({
+      ...review,
+      author_name: review.first_name || review.username || 'Пользователь'
+    }));
+    
+    res.json(reviews);
+    
+  } catch (error) {
+    console.error('❌ [REVIEWS] Ошибка получения отзывов:', error);
+    res.status(500).json({ error: 'Ошибка получения отзывов' });
+  }
+});
+
 // Эндпоинт для отмены/истечения заказа
 app.post('/api/orders/:id/expire', authMiddlewareWithDB, async (req, res) => {
   try {
