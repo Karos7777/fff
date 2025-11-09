@@ -430,25 +430,50 @@ function initializeEventHandlers() {
 // Глобальные функции для модалки оплаты
 window.openTelegramWallet = function(amount, payload) {
     const walletAddress = 'UQCm27jo_LGzzwx49_niSXqEz9ZRRTyxJxa-yD89Wnxb13fx';
-    const amountNanoton = Math.floor(parseFloat(amount) * 1000000000).toString();
+    const amountNanoton = Math.floor(parseFloat(amount) * 1000000000);
     
-    console.log('💳 Открываем TON Wallet:', { amount, payload, amountNanoton });
+    console.log('💳 [WALLET] Открываем TON Wallet:', { 
+        amount, 
+        payload, 
+        amountNanoton,
+        walletAddress 
+    });
     
-    // Создаем ссылки для разных кошельков
+    // Создаем правильную ton:// ссылку с параметрами
     const tonDeepLink = `ton://transfer/${walletAddress}?amount=${amountNanoton}&text=${encodeURIComponent(payload)}`;
-    const tonkeeperLink = `https://app.tonkeeper.com/transfer/${walletAddress}?amount=${amountNanoton}&text=${encodeURIComponent(payload)}`;
     
+    console.log('💳 [WALLET] TON Deep Link:', tonDeepLink);
+    
+    // Проверяем доступность Telegram WebApp
     if (window.Telegram?.WebApp) {
-        // Пробуем через Telegram WebApp API
-        if (window.Telegram.WebApp.openTelegramLink) {
-            const telegramWalletLink = `https://t.me/wallet?startattach=transfer-${walletAddress}-${amountNanoton}-${encodeURIComponent(payload)}`;
-            window.Telegram.WebApp.openTelegramLink(telegramWalletLink);
-        } else if (window.Telegram.WebApp.openLink) {
+        console.log('📱 [WALLET] Используем Telegram WebApp');
+        
+        // Используем openLink для ton:// протокола
+        // Это откроет кошелек с предзаполненными данными
+        try {
             window.Telegram.WebApp.openLink(tonDeepLink);
+            console.log('✅ [WALLET] Кошелек открыт через Telegram WebApp');
+        } catch (error) {
+            console.error('❌ [WALLET] Ошибка открытия через WebApp:', error);
+            // Fallback на прямую ссылку
+            window.location.href = tonDeepLink;
         }
     } else {
-        // Fallback на Tonkeeper
-        window.open(tonkeeperLink, '_blank');
+        console.log('🌐 [WALLET] Telegram WebApp недоступен, используем fallback');
+        
+        // Для десктопа или браузера - пробуем разные варианты
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+            // На мобильном пробуем ton:// протокол
+            console.log('📱 [WALLET] Мобильное устройство - открываем ton://');
+            window.location.href = tonDeepLink;
+        } else {
+            // На десктопе открываем Tonkeeper Web
+            const tonkeeperWebLink = `https://app.tonkeeper.com/transfer/${walletAddress}?amount=${amountNanoton}&text=${encodeURIComponent(payload)}`;
+            console.log('💻 [WALLET] Десктоп - открываем Tonkeeper Web');
+            window.open(tonkeeperWebLink, '_blank');
+        }
     }
 };
 
