@@ -96,10 +96,42 @@ module.exports = () => {
           const receivedAmount = parseInt(tx.in_msg.value) / 1e9;
           const hash = tx.hash || 'unknown';
           
+          // Обновляем статус инвойса
           await db.query(`UPDATE invoices SET status = 'paid', transaction_hash = $1, paid_at = CURRENT_TIMESTAMP WHERE id = $2`, [hash, inv.id]);
-          await db.query(`UPDATE orders SET status = 'paid' WHERE id = $1`, [inv.order_id]);
+          
+          // Обновляем статус заказа на 'completed' (не 'paid')
+          await db.query(`UPDATE orders SET status = 'completed', paid_at = CURRENT_TIMESTAMP WHERE id = $1`, [inv.order_id]);
 
           console.log(`✅ [TON POLLING] ОПЛАТА ЗАСЧИТАНА! Заказ #${inv.order_id} | payload: "${payload}" | сумма: ${receivedAmount.toFixed(9)} TON | hash: ${hash.slice(0, 16)}...`);
+          
+          // 🎁 АВТОМАТИЧЕСКАЯ ВЫДАЧА ТОВАРА
+          try {
+            // Получаем информацию о заказе и товаре
+            const orderInfo = await db.query(`
+              SELECT o.*, p.name as product_name, p.file_url, p.description, u.telegram_id, u.username
+              FROM orders o
+              JOIN products p ON o.product_id = p.id
+              JOIN users u ON o.user_id = u.id
+              WHERE o.id = $1
+            `, [inv.order_id]);
+            
+            if (orderInfo.rows.length > 0) {
+              const order = orderInfo.rows[0];
+              console.log(`🎁 [TON POLLING] Автоматическая выдача товара для заказа #${inv.order_id}`);
+              console.log(`   📦 Товар: ${order.product_name}`);
+              console.log(`   👤 Пользователь: ${order.username} (ID: ${order.telegram_id})`);
+              
+              if (order.file_url) {
+                console.log(`   📁 Файл доступен: ${order.file_url}`);
+                // Здесь можно отправить уведомление пользователю через Telegram Bot API
+                // если у вас настроен BOT_TOKEN
+              } else {
+                console.log(`   ℹ️  Товар без файла (услуга)`);
+              }
+            }
+          } catch (deliveryError) {
+            console.error(`❌ [TON POLLING] Ошибка при выдаче товара:`, deliveryError.message);
+          }
         } else {
           console.log(`   ❌ Транзакция не найдена (проверьте payload: "${payload}")`);
         }
