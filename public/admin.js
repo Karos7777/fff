@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     console.log('📝 Форма отправлена');
 
+    // ВАЖНО: Используем FormData для поддержки загрузки файлов
     const formData = new FormData(form);
 
     const infiniteEl = document.getElementById('productInfinite');
@@ -26,32 +27,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log('📦 Чекбоксы:', { infinite, active });
 
-    // Преобразуем FormData в JSON объект
-    const productData = {
-      name: formData.get('name'),
-      description: formData.get('description'),
-      price: parseFloat(formData.get('price')) || 0,
-      price_ton: parseFloat(formData.get('price_ton')) || null,
-      price_usdt: parseFloat(formData.get('price_usdt')) || null,
-      price_stars: parseInt(formData.get('price_stars')) || null,
-      category: formData.get('category') || 'other',
-      image_url: formData.get('image_url') || null,
-      file_path: formData.get('file_path') || null,
-      stock: infinite ? 999999 : (parseInt(formData.get('stock')) || 0),
-      infinite_stock: infinite,
-      is_active: active
-    };
+    // Добавляем чекбоксы в FormData (они не добавляются автоматически если не checked)
+    formData.set('infinite_stock', infinite ? 'on' : 'off');
+    formData.set('is_active', active ? 'on' : 'off');
 
-    console.log('📤 Отправка:', productData);
+    console.log('📤 Отправка FormData с полями:');
+    for (let [key, value] of formData.entries()) {
+      console.log(`  ${key}:`, value);
+    }
 
     try {
-      const res = await fetch('/api/products', {
+      const res = await fetch('/api/admin/products', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          // НЕ устанавливаем Content-Type - браузер автоматически установит с boundary
         },
-        body: JSON.stringify(productData)
+        body: formData // Отправляем FormData напрямую
       });
 
       const data = await res.json();

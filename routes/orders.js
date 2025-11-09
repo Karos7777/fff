@@ -79,6 +79,21 @@ module.exports = (authMiddleware) => {
         method: order.payment_method
       });
       
+      // ВАЖНО: Всегда возвращаем полный объект заказа с invoice_payload
+      // Для TON оплаты это критично для QR кода
+      const responseOrder = {
+        id: order.id,
+        user_id: order.user_id,
+        product_id: order.product_id,
+        quantity: order.quantity,
+        total_amount: order.total_amount,
+        amount: order.total_amount, // Дубликат для совместимости
+        status: order.status,
+        payment_method: order.payment_method,
+        invoice_payload: order.invoice_payload, // КРИТИЧНО для TON!
+        created_at: order.created_at
+      };
+      
       // Обрабатываем создание инвойса в зависимости от способа оплаты
       if (payment_method === 'ton' || payment_method === 'TON') {
         // Создаём TON инвойс
@@ -94,18 +109,19 @@ module.exports = (authMiddleware) => {
           
           return res.json({
             success: true,
-            order: order,
+            order: responseOrder,
             id: order.id,
             invoice: invoice,
             qr: invoice.qr,
             address: invoice.address,
-            amount: invoice.amount
+            amount: invoice.amount,
+            invoice_payload: order.invoice_payload // Дубликат для надежности
           });
         }
       }
       
       // Для других способов оплаты или если paymentService недоступен
-      res.json(order);
+      res.json(responseOrder);
 
     } catch (error) {
       console.error('❌ [ORDER CREATE] Критическая ошибка:', error);

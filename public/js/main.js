@@ -253,7 +253,13 @@ function showTONPaymentModal(order) {
     
     const walletAddress = 'UQCm27jo_LGzzwx49_niSXqEz9ZRRTyxJxa-yD89Wnxb13fx';
     const amount = order.total_amount || order.amount || '0';
-    const payload = order.invoice_payload || '';
+    
+    // КРИТИЧНО: Используем invoice_payload из заказа
+    // Если его нет, генерируем такой же как на сервере
+    const payload = order.invoice_payload || `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log('💎 [TON PAYMENT] Используем payload:', payload);
+    console.log('💎 [TON PAYMENT] Сумма:', amount);
     
     // Создаем ton:// ссылку для QR кода
     const amountNanoton = Math.floor(parseFloat(amount) * 1000000000);

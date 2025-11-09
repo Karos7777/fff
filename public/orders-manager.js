@@ -1,7 +1,8 @@
 // Менеджер заказов и отзывов
 // Версия: 2.0.0
 
-// Используем глобальную переменную orders из app.js (window.orders)
+// Инициализируем глобальную переменную orders
+let orders = window.orders || [];
 
 // Показать модальное окно с заказами
 async function showOrdersModal() {

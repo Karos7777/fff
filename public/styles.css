@@ -70,6 +70,8 @@ body {
   text-align: center;
   color: var(--white);
   margin-bottom: 30px;
+  padding: 0 140px; /* Добавляем отступы слева и справа для кнопок */
+  position: relative;
 }
 
 .header h1 {
@@ -1908,6 +1910,14 @@ body {
 
 /* Адаптивность для мобильных */
 @media (max-width: 768px) {
+  .header {
+    padding: 0 10px; /* Уменьшаем отступы на мобильных */
+  }
+  
+  .header h1 {
+    font-size: 2rem; /* Уменьшаем размер заголовка */
+  }
+  
   .support-button {
     top: 10px;
     right: 10px;

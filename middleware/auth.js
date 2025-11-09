@@ -90,17 +90,43 @@ const generateToken = (user) => {
 // Middleware для проверки админских прав
 const adminMiddleware = async (req, res, next) => {
   try {
-    // Сначала проверяем авторизацию
-    await authMiddlewareWithDB(req, res, () => {});
+    // Получаем токен
+    const authHeader = req.headers.authorization;
+    const token = authHeader ? authHeader.split(' ')[1] : null;
+    
+    if (!token) {
+      console.log('❌ [ADMIN] Токен не предоставлен');
+      return res.status(401).json({ error: 'Токен не предоставлен' });
+    }
+    
+    // Проверяем токен
+    const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('✅ [ADMIN] Токен декодирован:', decoded);
+    
+    // Получаем полную информацию о пользователе из базы данных
+    const db = require('../db');
+    const userResult = await db.query(
+      'SELECT * FROM users WHERE telegram_id = $1',
+      [decoded.telegram_id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      console.log('❌ [ADMIN] Пользователь не найден в БД:', decoded.telegram_id);
+      return res.status(401).json({ error: 'Пользователь не найден' });
+    }
+    
+    req.user = userResult.rows[0];
     
     // Проверяем админские права
-    if (!req.user || !req.user.is_admin) {
+    if (!req.user.is_admin) {
+      console.log('❌ [ADMIN] Пользователь не является администратором:', req.user.telegram_id);
       return res.status(403).json({ error: 'Доступ запрещен. Требуются права администратора.' });
     }
     
+    console.log('✅ [ADMIN] Права администратора подтверждены для:', req.user.username || req.user.telegram_id);
     next();
   } catch (error) {
-    console.error('Ошибка в adminMiddleware:', error);
+    console.error('❌ [ADMIN] Ошибка в adminMiddleware:', error);
     return res.status(401).json({ error: 'Ошибка авторизации' });
   }
 };
