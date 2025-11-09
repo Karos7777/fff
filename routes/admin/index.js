@@ -289,4 +289,59 @@ router.delete('/products/:id', adminMiddleware, async (req, res) => {
     }
 });
 
+// Получение статистики для дашборда
+router.get('/stats', adminMiddleware, async (req, res) => {
+    try {
+        console.log('📊 [ADMIN STATS] Загрузка статистики...');
+        
+        // Получаем количество товаров
+        const productsResult = await db.query('SELECT COUNT(*) as count FROM products WHERE is_active = true');
+        const totalProducts = parseInt(productsResult.rows[0].count) || 0;
+        
+        // Получаем количество заказов
+        const ordersResult = await db.query('SELECT COUNT(*) as count FROM orders');
+        const totalOrders = parseInt(ordersResult.rows[0].count) || 0;
+        
+        // Получаем количество пользователей
+        const usersResult = await db.query('SELECT COUNT(*) as count FROM users');
+        const totalUsers = parseInt(usersResult.rows[0].count) || 0;
+        
+        // Получаем общий доход (только оплаченные заказы)
+        const revenueResult = await db.query(`
+            SELECT 
+                SUM(CASE WHEN payment_method = 'ton' THEN total_amount ELSE 0 END) as ton_revenue,
+                SUM(CASE WHEN payment_method = 'usdt' THEN total_amount ELSE 0 END) as usdt_revenue,
+                SUM(CASE WHEN payment_method = 'stars' THEN total_amount ELSE 0 END) as stars_revenue
+            FROM orders 
+            WHERE status IN ('completed', 'paid')
+        `);
+        
+        const tonRevenue = parseFloat(revenueResult.rows[0].ton_revenue) || 0;
+        const usdtRevenue = parseFloat(revenueResult.rows[0].usdt_revenue) || 0;
+        const starsRevenue = parseFloat(revenueResult.rows[0].stars_revenue) || 0;
+        const totalRevenue = tonRevenue + usdtRevenue + starsRevenue;
+        
+        console.log('✅ [ADMIN STATS] Статистика загружена:', {
+            totalProducts,
+            totalOrders,
+            totalUsers,
+            totalRevenue
+        });
+        
+        res.json({
+            success: true,
+            totalProducts,
+            totalOrders,
+            totalUsers,
+            totalRevenue: totalRevenue.toFixed(2),
+            tonRevenue: tonRevenue.toFixed(2),
+            usdtRevenue: usdtRevenue.toFixed(2),
+            starsRevenue: starsRevenue.toFixed(0)
+        });
+    } catch (error) {
+        console.error('❌ [ADMIN STATS] Ошибка загрузки статистики:', error);
+        res.status(500).json({ error: 'Ошибка загрузки статистики', details: error.message });
+    }
+});
+
 module.exports = router;
