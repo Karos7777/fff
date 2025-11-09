@@ -9,12 +9,40 @@ const ADMIN_TELEGRAM_IDS = [
     // Можете добавить еще админов
 ];
 
+// Функция для парсинга initData из строки в объект
+function parseInitData(initDataString) {
+    if (typeof initDataString !== 'string') {
+        return initDataString; // Уже объект
+    }
+    
+    const params = new URLSearchParams(initDataString);
+    const result = {};
+    
+    for (const [key, value] of params.entries()) {
+        if (key === 'user') {
+            try {
+                result.user = JSON.parse(decodeURIComponent(value));
+            } catch (e) {
+                result.user = JSON.parse(value);
+            }
+        } else {
+            result[key] = value;
+        }
+    }
+    
+    return result;
+}
+
 // Роут для авторизации через Telegram
 router.post('/telegram', async (req, res) => {
     console.log('\n👤 [SERVER AUTH] Запрос авторизации через Telegram');
     try {
-        const { initData } = req.body;
-        console.log('👤 [SERVER AUTH] Получены initData:', initData);
+        const { initData: initDataRaw } = req.body;
+        console.log('👤 [SERVER AUTH] Получены initData (raw):', initDataRaw);
+        
+        // Парсим initData из строки в объект
+        const initData = parseInitData(initDataRaw);
+        console.log('👤 [SERVER AUTH] Распарсенные initData:', initData);
         
         if (!initData || !initData.user) {
             console.error('❌ [SERVER AUTH] Данные пользователя не предоставлены');
