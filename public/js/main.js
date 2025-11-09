@@ -85,6 +85,100 @@ function renderProducts(products) {
     if (authSection) authSection.style.display = 'none';
 }
 
+// Показать модальное окно оплаты TON
+function showTONPaymentModal(order) {
+    console.log('💎 Показ модалки оплаты для заказа:', order);
+    
+    const walletAddress = 'UQCm27jo_LGzzwx49_niSXqEz9ZRRTyxJxa-yD89Wnxb13fx';
+    const amount = order.total_amount || order.amount || '0';
+    const payload = order.invoice_payload || '';
+    
+    const modalHtml = `
+        <div class="payment-modal-overlay" id="paymentModalOverlay">
+            <div class="payment-modal">
+                <h3>💎 Оплата TON</h3>
+                
+                <div class="payment-info">
+                    <div class="payment-item">
+                        <label>Адрес кошелька:</label>
+                        <div class="copy-field">
+                            <code class="wallet-address">${walletAddress}</code>
+                            <button class="copy-btn" data-text="${walletAddress}">
+                                📋
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="payment-item">
+                        <label>Сумма:</label>
+                        <div class="copy-field">
+                            <code class="payment-amount">${amount} TON</code>
+                            <button class="copy-btn" data-text="${amount}">
+                                📋
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="payment-item highlight">
+                        <label>Комментарий (ОБЯЗАТЕЛЬНО!):</label>
+                        <div class="copy-field">
+                            <code class="payment-payload">${payload}</code>
+                            <button class="copy-btn" data-text="${payload}">
+                                📋
+                            </button>
+                        </div>
+                        <small class="warning-text">⚠️ Без этого комментария оплата не будет засчитана!</small>
+                    </div>
+                </div>
+
+                <div class="payment-actions">
+                    <button class="btn-primary" onclick="window.openTelegramWallet('${amount}', '${payload}')">
+                        💳 Открыть в Telegram Wallet
+                    </button>
+                    <button class="btn-secondary" onclick="window.closePaymentModal()">
+                        Закрыть
+                    </button>
+                </div>
+
+                <div class="payment-instructions">
+                    <h4>📋 Инструкция по оплате:</h4>
+                    <ol>
+                        <li>Скопируйте <strong>адрес кошелька</strong></li>
+                        <li>Скопируйте <strong>точную сумму</strong> (${amount} TON)</li>
+                        <li>Скопируйте <strong>комментарий</strong> и ОБЯЗАТЕЛЬНО вставьте его при отправке</li>
+                        <li>Отправьте платеж или используйте кнопку выше</li>
+                    </ol>
+                    <p class="warning">⚠️ Без комментария платеж не будет засчитан автоматически!</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    initializeCopyButtons();
+}
+
+// Инициализация кнопок копирования
+function initializeCopyButtons() {
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const text = this.getAttribute('data-text');
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = this.innerHTML;
+                this.innerHTML = '✅';
+                setTimeout(() => {
+                    this.innerHTML = originalText;
+                }, 2000);
+                
+                showSuccess('Скопировано в буфер обмена!');
+            }).catch(err => {
+                console.error('Ошибка копирования:', err);
+                showError('Не удалось скопировать');
+            });
+        });
+    });
+}
+
 // Обработка покупки
 async function handlePurchase(productId) {
     try {
@@ -92,7 +186,8 @@ async function handlePurchase(productId) {
         
         const token = localStorage.getItem('authToken');
         if (!token) {
-            showError('Необходима авторизация');
+            console.error('❌ Токен не найден');
+            showError('Ошибка авторизации. Перезагрузите приложение.');
             return;
         }
         
@@ -109,16 +204,15 @@ async function handlePurchase(productId) {
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Order creation failed');
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
         
         const order = await response.json();
         console.log('✅ Заказ создан:', order);
         
-        // Используем функцию из ui.js для показа модального окна оплаты
-        const { showTONPayment } = await import('./ui.js');
-        showTONPayment(order);
+        // Показываем модальное окно оплаты
+        showTONPaymentModal(order);
         
     } catch (error) {
         console.error('❌ Ошибка покупки:', error);
@@ -130,14 +224,53 @@ async function handlePurchase(productId) {
 function initializeEventHandlers() {
     console.log('🔧 Инициализация обработчиков...');
     
-    // Обработчик для кнопок покупки
+    // Обработчик для кнопок покупки (поддержка вложенных элементов)
     document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('buy-btn')) {
-            const productId = e.target.dataset.productId;
-            handlePurchase(productId);
+        const buyBtn = e.target.closest('.buy-btn');
+        if (buyBtn) {
+            const productId = buyBtn.dataset.productId;
+            if (productId) {
+                console.log('🛒 Нажата кнопка покупки для товара:', productId);
+                handlePurchase(productId);
+            } else {
+                console.error('❌ Не найден productId у кнопки:', buyBtn);
+            }
         }
     });
 }
+
+// Глобальные функции для модалки оплаты
+window.openTelegramWallet = function(amount, payload) {
+    const walletAddress = 'UQCm27jo_LGzzwx49_niSXqEz9ZRRTyxJxa-yD89Wnxb13fx';
+    const amountNanoton = Math.floor(parseFloat(amount) * 1000000000).toString();
+    
+    console.log('💳 Открываем TON Wallet:', { amount, payload, amountNanoton });
+    
+    // Создаем ссылки для разных кошельков
+    const tonDeepLink = `ton://transfer/${walletAddress}?amount=${amountNanoton}&text=${encodeURIComponent(payload)}`;
+    const tonkeeperLink = `https://app.tonkeeper.com/transfer/${walletAddress}?amount=${amountNanoton}&text=${encodeURIComponent(payload)}`;
+    
+    if (window.Telegram?.WebApp) {
+        // Пробуем через Telegram WebApp API
+        if (window.Telegram.WebApp.openTelegramLink) {
+            const telegramWalletLink = `https://t.me/wallet?startattach=transfer-${walletAddress}-${amountNanoton}-${encodeURIComponent(payload)}`;
+            window.Telegram.WebApp.openTelegramLink(telegramWalletLink);
+        } else if (window.Telegram.WebApp.openLink) {
+            window.Telegram.WebApp.openLink(tonDeepLink);
+        }
+    } else {
+        // Fallback на Tonkeeper
+        window.open(tonkeeperLink, '_blank');
+    }
+};
+
+window.closePaymentModal = function() {
+    const modal = document.getElementById('paymentModalOverlay');
+    if (modal) {
+        modal.remove();
+        console.log('✅ Модальное окно оплаты закрыто');
+    }
+};
 
 // Инициализация приложения
 async function initApp() {
