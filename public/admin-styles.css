@@ -626,4 +626,79 @@ body {
 .lang-switcher select:focus {
     outline: none;
     border-color: #667eea;
-} 
+}
+
+/* Кнопки действий в таблице */
+.btn-icon {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+.btn-icon:hover {
+    background: #f0f0f0;
+    transform: scale(1.1);
+}
+
+.btn-icon.btn-danger:hover {
+    background: #ffe5e5;
+}
+
+/* Статус badges */
+.status-badge {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.status-active {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-inactive {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Таблица товаров */
+.products-table-container {
+    background: white;
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+    overflow-x: auto;
+}
+
+.products-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.products-table th {
+    background: #f8f9fa;
+    padding: 15px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #e1e5e9;
+}
+
+.products-table td {
+    padding: 15px;
+    border-bottom: 1px solid #e1e5e9;
+    vertical-align: middle;
+}
+
+.products-table tr:hover {
+    background: #f8f9fa;
+}
+
+.products-table tr:last-child td {
+    border-bottom: none;
+}
