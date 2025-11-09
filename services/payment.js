@@ -1,5 +1,3 @@
-const db = require('../db');
-
 class PaymentService {
     constructor(database, botToken) {
         this.db = database;

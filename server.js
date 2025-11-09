@@ -85,8 +85,7 @@ app.use(express.static('public'));
 const databaseService = new DatabaseService();
 let paymentService;
 
-// Сохраняем dbLegacy для доступа из роутов
-app.set('dbLegacy', databaseService.getDbLegacy());
+app.set('db', databaseService.getDb());
 
 // Явные маршруты для важных файлов TON Connect
 app.get('/tonconnect-manifest.json', (req, res) => {
@@ -129,142 +128,6 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/telegram', telegramWebhooks);
 app.use('/api/payments/stars', starsPayments);
 
-// ВРЕМЕННЫЕ ЭНДПОИНТЫ ДЛЯ ДИАГНОСТИКИ И ИСПРАВЛЕНИЯ БД
-app.get('/admin/check-db', async (req, res) => {
-    try {
-        const db = require('./db');
-        console.log('📊 Проверка структуры таблицы orders...');
-        
-        const result = await db.query(`
-            SELECT column_name, data_type, is_nullable, column_default
-            FROM information_schema.columns 
-            WHERE table_name = 'orders' 
-            ORDER BY ordinal_position;
-        `);
-        
-        console.log('📊 Структура таблицы orders:');
-        result.rows.forEach(col => {
-            console.log(`   - ${col.column_name} (${col.data_type}) ${col.is_nullable === 'YES' ? 'NULL' : 'NOT NULL'} ${col.column_default ? `DEFAULT ${col.column_default}` : ''}`);
-        });
-        
-        res.json({ 
-            success: true,
-            table: 'orders',
-            columns: result.rows 
-        });
-    } catch (error) {
-        console.error('❌ Ошибка проверки БД:', error);
-        res.status(500).json({ 
-            success: false,
-            error: error.message 
-        });
-    }
-});
-
-app.post('/admin/fix-database', async (req, res) => {
-    try {
-        const db = require('./db');
-        console.log('🔧 Исправление структуры базы данных...');
-        
-        // Добавляем колонку quantity
-        await db.query(`
-            ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1;
-        `);
-        console.log('✅ Колонка quantity добавлена в таблицу orders');
-        
-        // Добавляем колонку total_amount
-        await db.query(`
-            ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(20,9);
-        `);
-        console.log('✅ Колонка total_amount добавлена в таблицу orders');
-        
-        // Добавляем колонку paid_at
-        await db.query(`
-            ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
-        `);
-        console.log('✅ Колонка paid_at добавлена в таблицу orders');
-        
-        // Добавляем колонку payload для Telegram
-        await db.query(`
-            ALTER TABLE orders ADD COLUMN IF NOT EXISTS payload TEXT;
-        `);
-        console.log('✅ Колонка payload добавлена в таблицу orders');
-        
-        // Добавляем колонку telegram_invoice_data
-        await db.query(`
-            ALTER TABLE orders ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT;
-        `);
-        console.log('✅ Колонка telegram_invoice_data добавлена в таблицу orders');
-        
-        // Добавляем колонку invoice_payload
-        await db.query(`
-            ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_payload VARCHAR(255);
-        `);
-        console.log('✅ Колонка invoice_payload добавлена в таблицу orders');
-        
-        res.json({ 
-            success: true, 
-            message: 'База данных исправлена - все колонки добавлены' 
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка исправления БД:', error);
-        res.status(500).json({ 
-            success: false,
-            error: error.message 
-        });
-    }
-});
-
-// Отладочный эндпоинт для проверки заказов
-app.get('/admin/debug-orders', async (req, res) => {
-    try {
-        const result = await db.query(`
-            SELECT id, invoice_payload, total_amount, status, created_at, payment_method
-            FROM orders 
-            ORDER BY id DESC LIMIT 10
-        `);
-        
-        console.log('📊 Последние 10 заказов:');
-        result.rows.forEach(order => {
-            console.log(`   #${order.id}: payload="${order.invoice_payload}", amount=${order.total_amount}, status=${order.status}, method=${order.payment_method}`);
-        });
-        
-        res.json(result.rows);
-    } catch (error) {
-        console.error('❌ Debug error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Исправление payload для существующих заказов
-app.post('/admin/fix-payloads', async (req, res) => {
-    try {
-        console.log('🔧 Исправление payload для существующих заказов...');
-        
-        // Обновляем заказы с null payload
-        const result = await db.query(`
-            UPDATE orders 
-            SET invoice_payload = 'order_' || id || '_' || substr(md5(random()::text), 1, 8)
-            WHERE invoice_payload IS NULL OR invoice_payload = 'null'
-            RETURNING id, invoice_payload
-        `);
-        
-        console.log(`✅ Исправлено ${result.rows.length} заказов:`);
-        result.rows.forEach(row => {
-            console.log(`   #${row.id}: ${row.invoice_payload}`);
-        });
-        
-        res.json({ 
-            fixed: result.rows.length,
-            orders: result.rows 
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка исправления:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
 
 // Главная страница
 app.get('/', (req, res) => {
@@ -282,8 +145,7 @@ const startServer = async () => {
         // Инициализация базы данных
         await databaseService.initDB();
         
-        // Инициализация сервиса платежей
-        paymentService = new PaymentService(require('./db'), BOT_TOKEN);
+        paymentService = new PaymentService(require('./db-postgres'), BOT_TOKEN);
         await paymentService.initPaymentTables();
         console.log('✅ Сервис платежей инициализирован');
         
@@ -339,17 +201,11 @@ function setupCronJobs() {
         console.log('✅ Автоматические задачи платежей настроены');
     }
     
-    // Запускаем cron задачу для автоматической отмены истёкших заказов
-    console.log('⏰ Запуск cron задачи для автоудаления заказов (каждые 5 минут)');
     cron.schedule('*/5 * * * *', async () => {
         try {
-            console.log('\n⏰ [CRON] Проверка истёкших заказов...');
+            const db = require('./db-postgres');
+            const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
             
-            const db = require('./db');
-            const now = new Date();
-            const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-            
-            // Находим все заказы старше 1 часа со статусом pending
             const expiredOrdersResult = await db.query(`
                 SELECT * FROM orders 
                 WHERE status IN ('pending', 'pending_crypto') 
@@ -359,25 +215,14 @@ function setupCronJobs() {
             const expiredOrders = expiredOrdersResult.rows;
             
             if (expiredOrders.length > 0) {
-                console.log(`⏰ [CRON] Найдено истёкших заказов: ${expiredOrders.length}`);
-                
-                // Удаляем истёкшие заказы полностью
                 for (const order of expiredOrders) {
-                    // Сначала удаляем связанные инвойсы
                     await db.query('DELETE FROM invoices WHERE order_id = $1', [order.id]);
-                    
-                    // Затем удаляем сам заказ
                     await db.query('DELETE FROM orders WHERE id = $1', [order.id]);
-                    
-                    console.log(`🗑️ [CRON] Заказ #${order.id} удалён (истёк)`);
                 }
-                
                 console.log(`✅ [CRON] Удалено заказов: ${expiredOrders.length}`);
-            } else {
-                console.log('⏰ [CRON] Истёкших заказов не найдено');
             }
         } catch (error) {
-            console.error('❌ [CRON] Ошибка при проверке заказов:', error);
+            console.error('❌ [CRON] Ошибка:', error);
         }
     });
 }

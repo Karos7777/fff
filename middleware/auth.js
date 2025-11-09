@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const db = require('../db');
+const db = require('../db-postgres');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
 
@@ -103,8 +103,6 @@ const adminMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     console.log('✅ [ADMIN] Токен декодирован:', decoded);
     
-    // Получаем полную информацию о пользователе из базы данных
-    const db = require('../db');
     const userResult = await db.query(
       'SELECT * FROM users WHERE telegram_id = $1',
       [decoded.telegram_id]

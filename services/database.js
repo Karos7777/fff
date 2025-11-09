@@ -1,17 +1,15 @@
-const db = require('../db');
-const PostgresAdapter = require('../db-postgres');
+const db = require('../db-postgres');
 
 class DatabaseService {
     constructor() {
-        this.dbLegacy = new PostgresAdapter(process.env.DATABASE_URL);
+        this.db = db;
     }
 
     async initDB() {
         try {
             console.log('🔄 Инициализация базы данных PostgreSQL...');
             
-            // Таблица пользователей
-            await this.dbLegacy.exec(`
+            await this.db.exec(`
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
                     telegram_id BIGINT UNIQUE NOT NULL,
@@ -45,15 +43,8 @@ class DatabaseService {
                 )
             `);
             
-            // Добавляем колонку file_path если её нет
-            try {
-                await this.dbLegacy.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
-            } catch (e) {
-                // Колонка уже существует
-            }
-
-            // Таблица отзывов
-            await this.dbLegacy.exec(`
+            await this.db.exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS file_path TEXT`);
+            await this.db.exec(`
                 CREATE TABLE IF NOT EXISTS reviews (
                     id SERIAL PRIMARY KEY,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -63,22 +54,15 @@ class DatabaseService {
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             `);
+
+            await this.db.exec(`
+                ALTER TABLE products 
+                ADD COLUMN IF NOT EXISTS price_ton DECIMAL(10,4),
+                ADD COLUMN IF NOT EXISTS price_usdt DECIMAL(10,4),
+                ADD COLUMN IF NOT EXISTS price_stars INTEGER
+            `);
             
-            // Миграция: добавляем новые колонки цен если их нет
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE products 
-                    ADD COLUMN IF NOT EXISTS price_ton DECIMAL(10,4),
-                    ADD COLUMN IF NOT EXISTS price_usdt DECIMAL(10,4),
-                    ADD COLUMN IF NOT EXISTS price_stars INTEGER
-                `);
-                console.log('✅ Миграция: колонки price_ton, price_usdt, price_stars проверены/добавлены');
-            } catch (e) {
-                console.log('⚠️ Миграция цен: колонки уже существуют или ошибка:', e.message);
-            }
-            
-            // Таблица заказов
-            await this.dbLegacy.exec(`
+            await this.db.exec(`
                 CREATE TABLE IF NOT EXISTS orders (
                     id SERIAL PRIMARY KEY,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -91,72 +75,22 @@ class DatabaseService {
                 )
             `);
 
-            // Миграция: добавляем колонку quantity
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE orders 
-                    ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1
-                `);
-                console.log('✅ Миграция: колонка quantity добавлена в orders');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции quantity:', e.message);
-                }
-            }
 
-            // Миграция: добавляем колонку total_amount
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE orders 
-                    ADD COLUMN IF NOT EXISTS total_amount DECIMAL(20,9)
-                `);
-                console.log('✅ Миграция: колонка total_amount добавлена в orders');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции total_amount:', e.message);
-                }
-            }
+            await this.db.exec(`
+                ALTER TABLE orders 
+                ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1,
+                ADD COLUMN IF NOT EXISTS total_amount DECIMAL(20,9),
+                ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS invoice_payload VARCHAR(255)
+            `);
+            
+            await this.db.exec(`
+                UPDATE orders 
+                SET invoice_payload = 'order_' || id 
+                WHERE invoice_payload IS NULL OR invoice_payload = 'null'
+            `);
 
-            // Миграция: добавляем колонку paid_at для orders
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE orders 
-                    ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP
-                `);
-                console.log('✅ Миграция: колонка paid_at добавлена в orders');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции paid_at в orders:', e.message);
-                }
-            }
-
-            // Миграция: добавляем колонку invoice_payload для orders
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE orders 
-                    ADD COLUMN IF NOT EXISTS invoice_payload VARCHAR(255)
-                `);
-                console.log('✅ Миграция: колонка invoice_payload добавлена в orders');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции invoice_payload в orders:', e.message);
-                }
-            }
-
-            // Миграция: обновляем существующие заказы с null payload
-            try {
-                await this.dbLegacy.exec(`
-                    UPDATE orders 
-                    SET invoice_payload = 'order_' || id 
-                    WHERE invoice_payload IS NULL OR invoice_payload = 'null'
-                `);
-                console.log('✅ Миграция: обновлены payload для существующих заказов');
-            } catch (e) {
-                console.error('⚠️ Ошибка обновления payload:', e.message);
-            }
-
-            // Таблица инвойсов (для платежей)
-            await this.dbLegacy.exec(`
+            await this.db.exec(`
                 CREATE TABLE IF NOT EXISTS invoices (
                     id SERIAL PRIMARY KEY,
                     order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
@@ -169,58 +103,20 @@ class DatabaseService {
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             `);
+
             
-            // Миграция: изменяем тип amount для поддержки TON (до 9 знаков после запятой)
-            try {
-                await this.dbLegacy.exec(`ALTER TABLE invoices ALTER COLUMN amount TYPE DECIMAL(20,9)`);
-                console.log('✅ Миграция: колонка amount изменена на DECIMAL(20,9)');
-            } catch (e) {
-                console.log('⚠️ Миграция amount: уже выполнена или ошибка:', e.message);
-            }
-
-            // Миграция: добавляем колонку transaction_hash
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE invoices 
-                    ADD COLUMN IF NOT EXISTS transaction_hash TEXT
-                `);
-                console.log('✅ Миграция: колонка transaction_hash добавлена');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции transaction_hash:', e.message);
-                }
-            }
-
-            // Миграция: добавляем колонку paid_at
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE invoices 
-                    ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP
-                `);
-                console.log('✅ Миграция: колонка paid_at добавлена');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции paid_at:', e.message);
-                }
-            }
-
-            // Миграция: добавляем колонки для Telegram Stars
-            try {
-                await this.dbLegacy.exec(`
-                    ALTER TABLE invoices 
-                    ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT,
-                    ADD COLUMN IF NOT EXISTS payload TEXT,
-                    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP,
-                    ADD COLUMN IF NOT EXISTS address TEXT,
-                    ADD COLUMN IF NOT EXISTS memo TEXT,
-                    ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id)
-                `);
-                console.log('✅ Миграция: колонки для Telegram Stars добавлены');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('⚠️ Ошибка миграции Telegram Stars:', e.message);
-                }
-            }
+            await this.db.exec(`ALTER TABLE invoices ALTER COLUMN amount TYPE DECIMAL(20,9)`);
+            await this.db.exec(`
+                ALTER TABLE invoices 
+                ADD COLUMN IF NOT EXISTS transaction_hash TEXT,
+                ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS telegram_invoice_data TEXT,
+                ADD COLUMN IF NOT EXISTS payload TEXT,
+                ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS address TEXT,
+                ADD COLUMN IF NOT EXISTS memo TEXT,
+                ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id)
+            `);
 
             // Добавляем админа по умолчанию
             await db.run(`
@@ -236,8 +132,8 @@ class DatabaseService {
         }
     }
 
-    getDbLegacy() {
-        return this.dbLegacy;
+    getDb() {
+        return this.db;
     }
 }
 
