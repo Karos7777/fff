@@ -14,7 +14,7 @@ const tonPolling = require('./services/tonPolling');
 const { authMiddlewareWithDB } = require('./middleware/auth');
 
 // Импорт роутов
-const authRoutes = require('./routes/auth/auth');
+const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const usersRoutes = require('./routes/users');
 const productsRoutes = require('./routes/products');
