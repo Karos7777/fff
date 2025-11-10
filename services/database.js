@@ -24,7 +24,7 @@ class DatabaseService {
             `);
 
             // Таблица товаров
-            await this.dbLegacy.exec(`
+            await this.db.exec(`
                 CREATE TABLE IF NOT EXISTS products (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -119,7 +119,7 @@ class DatabaseService {
             `);
 
             // Добавляем админа по умолчанию
-            await db.run(`
+            await this.db.run(`
                 INSERT INTO users (telegram_id, username, is_admin) 
                 VALUES ($1, $2, $3)
                 ON CONFLICT (telegram_id) DO NOTHING

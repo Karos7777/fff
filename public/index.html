@@ -326,8 +326,14 @@
     <!-- Модули приложения -->
     <script type="module" src="js/main.js"></script>
     
-    <!-- Дополнительные модули (совместимость) -->
+    <!-- Модули платежей (загружаются в правильном порядке) -->
+    <script src="js/payment-core.js"></script>
+    <script src="js/payment-stars.js"></script>
+    <script src="js/payment-crypto.js"></script>
+    <script src="js/payment-wallet.js"></script>
     <script src="payment.js"></script>
+    
+    <!-- Дополнительные модули (совместимость) -->
     <script src="orders-manager.js"></script>
 </body>
 </html>
